@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: Gear Glance
+## Notes: Item levels, upgrade arrows and binding labels on your bag and bank items.
+## Author: Mimezu
+## Version: 2.0.1
+## SavedVariables: GearGlanceDB
+## IconTexture: Interface\Icons\INV_Misc_Spyglass_02
+## AddonCompartmentFunc: GearGlance_ToggleOptions
+## Category: Mimezu's Suite
+## Group: Mimezu_Interface
+
+Core.lua
+Skin.lua
+Options.lua
