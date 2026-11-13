@@ -20,6 +20,7 @@ A.defaults = {
     showArrow = true,
     showBinding = true,
     showOpenable = true,
+    showCheapest = true,
     textSize = 13,
     bagButton = true,
 }
@@ -171,6 +172,46 @@ local function Analyze(bag, slot, info)
     return data
 end
 
+-- Cheapest item when the bags are full ------------------------------------------------
+-- When no general bag has a free slot, the bag item with the lowest vendor
+-- value (price x stack) gets a junk coin: the one to sell or drop for room.
+-- Items with no vendor price (quest items, the hearthstone) are skipped.
+
+local cheapBag, cheapSlot
+local cheapIncomplete = false -- an item's price was still loading
+
+local function ScanCheapest()
+    cheapBag, cheapSlot, cheapIncomplete = nil, nil, false
+    local db = A.db
+    if not (db and db.enabled and db.showCheapest) then return end
+    local general = {}
+    for bag = 0, (NUM_BAG_SLOTS or 4) do
+        local free, family = C_Container.GetContainerNumFreeSlots(bag)
+        if (family or 0) == 0 and (C_Container.GetContainerNumSlots(bag) or 0) > 0 then
+            if (free or 0) > 0 then return end
+            general[#general + 1] = bag
+        end
+    end
+    local lowest
+    for _, bag in ipairs(general) do
+        for slot = 1, C_Container.GetContainerNumSlots(bag) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.hyperlink and not info.hasNoValue then
+                local name, _, _, _, _, _, _, _, _, _, price = C_Item.GetItemInfo(info.hyperlink)
+                if not name then
+                    cheapIncomplete = true
+                elseif price and price > 0 then
+                    local value = price * (info.stackCount or 1)
+                    if not lowest or value < lowest then
+                        lowest, cheapBag, cheapSlot = value, bag, slot
+                    end
+                end
+            end
+        end
+    end
+end
+A.ScanCheapest = ScanCheapest
+
 -- Overlay ---------------------------------------------------------------------------------
 
 local qualityColors = {}
@@ -209,6 +250,10 @@ function A.MakeOverlay(button)
     overlay.glow:SetAllPoints(button)
     overlay.glow:SetBlendMode("ADD")
     overlay.glow:SetVertexColor(GLOW_COLOR[1], GLOW_COLOR[2], GLOW_COLOR[3])
+    -- Blizzard's vendor junk coin, same art and corner.
+    overlay.cheap = button:CreateTexture(nil, "OVERLAY", nil, 7)
+    overlay.cheap:SetAtlas("bags-junkcoin", true)
+    overlay.cheap:SetPoint("TOPLEFT", 1, 0)
     for _, region in pairs(overlay) do region:Hide() end
     overlays[button] = overlay
     return overlay
@@ -224,7 +269,7 @@ local function StyleFonts(overlay)
 end
 
 local function Clear(overlay)
-    overlay.level:Hide(); overlay.bind:Hide(); overlay.arrow:Hide(); overlay.glow:Hide()
+    overlay.level:Hide(); overlay.bind:Hide(); overlay.arrow:Hide(); overlay.glow:Hide(); overlay.cheap:Hide()
     overlay.key = nil
 end
 
@@ -235,8 +280,11 @@ function A.Paint(overlay, data)
     local on = db.enabled and data ~= nil
     local r, g, b = 1, 1, 1
     if on and db.qualityColors then r, g, b = QualityColor(data.quality) end
-    -- At a vendor Blizzard puts a junk coin in the top-left corner of grey items.
-    if on and db.showItemLevel and data.level and not data.junk then
+    -- At a vendor Blizzard puts a junk coin in the top-left corner of grey items;
+    -- the cheapest item gets the same coin when the bags are full.
+    local cheap = on and db.showCheapest and data.cheap == true and not data.junk
+    overlay.cheap:SetShown(cheap)
+    if on and db.showItemLevel and data.level and not data.junk and not cheap then
         overlay.level:SetText(data.level)
         overlay.level:SetTextColor(r, g, b)
         overlay.level:Show()
@@ -283,11 +331,13 @@ local function Update(button)
         return
     end
     local junk = button.JunkIcon and button.JunkIcon:IsShown() or false
-    local key = link .. (info.isBound and "|b|" or "|u|") .. (junk and "j|" or "") .. bag .. ":" .. slot
+    local cheap = bag == cheapBag and slot == cheapSlot and not button.GetBankTabID
+    local key = link .. (info.isBound and "|b|" or "|u|") .. (junk and "j|" or "") .. (cheap and "c|" or "")
+        .. bag .. ":" .. slot
     if overlay and overlay.key == key and overlay.rev == revision then return end
     overlay = overlay or A.MakeOverlay(button)
     local data = Analyze(bag, slot, info)
-    data.junk = junk
+    data.junk, data.cheap = junk, cheap
     A.Paint(overlay, data)
     if data.pending then
         -- Blizzard redraws its bags when their items load; the retries cover
@@ -315,6 +365,7 @@ end
 
 local function Flush()
     flushQueued = false
+    ScanCheapest()
     for frame in pairs(queuedFrames) do
         queuedFrames[frame] = nil
         if frame:IsShown() then EachButton(frame, Update) end
@@ -420,6 +471,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         wipe(equipped)
         A.RefreshAll()
     else -- item data arrived
+        if cheapIncomplete then A.RefreshAll() end
         RetryPending()
     end
 end)

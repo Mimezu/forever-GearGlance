@@ -2,7 +2,7 @@
 ## Title: Gear Glance
 ## Notes: Item levels, upgrade arrows and binding labels on your bag and bank items.
 ## Author: Mimezu
-## Version: 2.0.1
+## Version: 2.1.0
 ## SavedVariables: GearGlanceDB
 ## IconTexture: Interface\Icons\INV_Misc_Spyglass_02
 ## AddonCompartmentFunc: GearGlance_ToggleOptions

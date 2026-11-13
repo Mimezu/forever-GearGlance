@@ -111,7 +111,7 @@ C_Item = {
     GetItemInfo = function(link)
         local it = ITEMS[link]
         if not it or notCached[link] then return nil end
-        return it.name, link, it.quality, it.level, 1, "", "", 1, it.equipLoc or "", 0, 0,
+        return it.name, link, it.quality, it.level, 1, "", "", 1, it.equipLoc or "", 0, it.price or 0,
             it.classID or 0, it.subClassID or 0, it.bindType or 0
     end,
     GetItemInfoInstant = function(link)
@@ -144,7 +144,15 @@ C_Container = {
         local s = bags[bag] and bags[bag][slot]
         if not s then return nil end
         local it = ITEMS[s.link]
-        return { hyperlink = s.link, quality = it.quality, isBound = s.bound == true, hasLoot = s.loot == true }
+        return { hyperlink = s.link, quality = it.quality, isBound = s.bound == true, hasLoot = s.loot == true,
+            stackCount = s.count or 1 }
+    end,
+    GetContainerNumSlots = function(bag) return bag == 0 and 8 or 0 end,
+    GetContainerNumFreeSlots = function(bag)
+        if bag ~= 0 then return 0, 0 end
+        local free = 8
+        for slot = 1, 8 do if bags[0] and bags[0][slot] then free = free - 1 end end
+        return free, 0
     end,
 }
 
@@ -306,6 +314,53 @@ combined.buttons[1].GetBagID = function() return nil end
 combined:UpdateItems()
 flush()
 check(true, "button without a bag is skipped")
+
+-- Bags full: a coin on the item worth least at a vendor (price x stack).
+local function cheap(slot) return overlay(slot).cheap.shown end
+local function anyCheap() for s = 1, 8 do if cheap(s) then return s end end end
+combined.buttons[1].GetBagID = function() return 0 end
+check(not anyCheap(), "a free slot: no coin")
+for slot = 1, 8 do
+    bags[0][slot] = { link = Item("Sell" .. slot, { quality = 1, level = 10, price = 100 * slot }) }
+end
+bags[0][2] = { link = Item("Hearth", { quality = 1, level = 1, price = 0 }) }
+bags[0][3] = { link = Item("Cloth", { quality = 1, level = 5, price = 20 }), count = 20 } -- 400
+bags[0][5] = { link = Item("Gloves", { quality = 2, level = 15, price = 150, equipLoc = "INVTYPE_HAND", classID = 4, subClassID = 1 }) }
+combined:UpdateItems()
+flush()
+check(anyCheap() == 1, "cheapest by stack value, unpriced items skipped")
+bags[0][1] = nil
+combined:UpdateItems()
+flush()
+check(not anyCheap(), "coin gone once a slot frees up")
+bags[0][1] = { link = Item("Sell1b", { quality = 1, level = 10, price = 900 }) }
+combined:UpdateItems()
+flush()
+check(anyCheap() == 5 and not overlay(5).level.shown, "coin moves; it takes the item level's corner")
+ns.SetOption("showCheapest", false)
+flush()
+check(not anyCheap(), "option turns the coin off")
+ns.SetOption("showCheapest", true)
+flush()
+check(anyCheap() == 5, "and on again")
+local slowCoin = Item("SlowCoin", { quality = 0, level = 1, price = 1 })
+notCached[slowCoin] = true
+bags[0][4] = { link = slowCoin }
+combined:UpdateItems()
+flush()
+check(anyCheap() == 5, "unloaded item not picked yet")
+notCached[slowCoin] = nil
+fire("GET_ITEM_INFO_RECEIVED", 1)
+flush()
+check(anyCheap() == 4, "picked once its price loads")
+combined.buttons[4].JunkIcon = Region("Texture")
+combined:UpdateItems()
+flush()
+check(not cheap(4), "Blizzard's own vendor coin is not doubled")
+combined.buttons[4].JunkIcon = nil
+for slot = 1, 8 do bags[0][slot] = nil end
+combined:UpdateItems()
+flush()
 
 -- Bank buttons refresh through the mixin hook.
 local bankButton = Region("ItemButton")

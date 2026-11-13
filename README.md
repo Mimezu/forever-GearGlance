@@ -6,6 +6,7 @@ A small Forever version of the retail Gear Glance. It marks your bag and bank it
 - **Green arrow** when the item level is higher than what you wear in that slot. It compares item level only.
 - **BoE / BoA / WuE** in the bottom-left corner.
 - **Gold glow** on items you can open (lockboxes, clams, bags of loot).
+- **Junk coin** on the cheapest item (vendor price x stack) when your bags are full.
 
 ## Use
 

@@ -3,12 +3,12 @@
 
 local _, A = ...
 
-local W, H = 560, 396
+local W, H = 560, 422
 local PW = W - 48            -- content width
 local GAP = 10
 local CW = (PW - GAP) / 2    -- card width
 local RIGHT = CW + GAP
-local H1, H2 = 182, 108      -- card rows
+local H1, H2 = 208, 108      -- card rows
 local TOP = 36               -- first control below a card title
 local LABEL_X = 34           -- where a checkbox label starts (box at 10, text at +24)
 local NOTE, DIM = { 0.80, 0.77, 0.70 }, { 0.5, 0.5, 0.5 }
@@ -154,6 +154,7 @@ local function BuildContent(page)
         Check(items, "showArrow", "Upgrade arrow", 10, -TOP - 26),
         Check(items, "showBinding", "Binding (BoE, BoA)", 10, -TOP - 82),
         Check(items, "showOpenable", "Glow on items you can open", 10, -TOP - 108),
+        Check(items, "showCheapest", "Coin on cheapest, bags full", 10, -TOP - 134),
     }
     Note(items, "Item level higher than what you wear.\nStats are not compared.", LABEL_X, -TOP - 50, CW - LABEL_X - 10)
 

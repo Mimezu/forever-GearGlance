@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.0
+
+- Bags full: a junk coin on the bag item worth least at a vendor (price x stack). Option "Coin on cheapest, bags full", on by default.
+
 ## 2.0.1
 
 - Build 70338: a frame's strata can now be a secret value; the backpack title-bar button falls back to HIGH instead of erroring.
