@@ -319,6 +319,7 @@ end
 local function SellNext()
     if not selling then return end
     if not (MerchantFrame and MerchantFrame:IsShown()) then FinishSale(); return end
+    local any = false
     for bag = 0, (NUM_BAG_SLOTS or 4) do
         for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
@@ -328,11 +329,12 @@ local function SellNext()
             if key and Marks()[key] and not tried[spot] then
                 tried[spot] = { bag = bag, slot = slot, link = info.hyperlink, key = key }
                 C_Container.UseContainerItem(bag, slot)
-                C_Timer.After(SELL_DELAY, SellNext)
-                return
+                any = true
             end
         end
     end
+    -- Like Leatrix Plus: sell every marked item in one pass, then look again.
+    if any then C_Timer.After(SELL_DELAY, SellNext); return end
     -- Nothing left to try; give items still locked by a sale time to leave.
     for _, try in pairs(tried) do
         local info = C_Container.GetContainerItemInfo(try.bag, try.slot)
@@ -346,10 +348,12 @@ local function SellNext()
 end
 
 local function StartSale()
+    if IsShiftKeyDown() then return end -- shift at the vendor: no sale this time
     if selling or not (A.db and A.db.sellMarks) or not next(Marks()) then return end
     selling, tried, waits = true, {}, 0
     startMoney = GetMoney and GetMoney()
-    SellNext()
+    -- MERCHANT_SHOW comes before Blizzard shows the vendor window: wait a tick.
+    C_Timer.After(SELL_DELAY, SellNext)
 end
 
 -- Overlay ---------------------------------------------------------------------------------
@@ -615,7 +619,8 @@ events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 events:RegisterEvent("ITEM_DATA_LOAD_RESULT")
 events:RegisterEvent("MERCHANT_SHOW")
 events:RegisterEvent("MERCHANT_CLOSED")
-events:SetScript("OnEvent", function(_, event, arg1)
+events:RegisterEvent("UI_ERROR_MESSAGE")
+events:SetScript("OnEvent", function(_, event, arg1, ...)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then InitDB() end
     elseif event == "PLAYER_LOGIN" then
@@ -629,6 +634,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
         StartSale()
     elseif event == "MERCHANT_CLOSED" then
         if selling then FinishSale() end
+    elseif event == "UI_ERROR_MESSAGE" then
+        -- The vendor buys nothing, or the gold cap is reached: stop.
+        local message = ... -- UI_ERROR_MESSAGE: errorType, message
+        if selling and message and (message == ERR_VENDOR_DOESNT_BUY or message == ERR_TOO_MUCH_GOLD) then
+            FinishSale()
+        end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_LEVEL_UP" then
         wipe(equipped)
         A.RefreshAll()

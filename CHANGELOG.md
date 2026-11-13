@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1
+
+- Fix: marked items did not sell. The sale started before Blizzard showed the vendor window and stopped at once; it now waits a tick.
+- Sells all marked items per pass (like Leatrix Plus), stops if the vendor buys nothing or you hit the gold cap.
+- Hold Shift when talking to a vendor to skip the sale.
+
 ## 2.2.0
 
 - Alt-click a bag item to mark it for sale (darkened, coin pile top right); alt-click again to unmark.

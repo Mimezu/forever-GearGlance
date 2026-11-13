@@ -2,7 +2,7 @@
 ## Title: Gear Glance
 ## Notes: Item levels, upgrade arrows and binding labels on your bag and bank items. Alt-click to mark items for sale.
 ## Author: Mimezu
-## Version: 2.2.0
+## Version: 2.2.1
 ## SavedVariables: GearGlanceDB
 ## SavedVariablesPerCharacter: GearGlanceCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Spyglass_02

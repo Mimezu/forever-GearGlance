@@ -428,11 +428,14 @@ SlashCmdList.GEARGLANCE("on")
 flush()
 
 refused[bear] = true
-fire("MERCHANT_SHOW") -- vendor window not open yet: nothing sold
-flush()
-check(#sold == 0 and bags[0][1], "no sale without the vendor window")
-MerchantFrame.shown = true
+keys.shift = true
 fire("MERCHANT_SHOW")
+flush()
+keys.shift = false
+check(#sold == 0 and bags[0][1], "shift at the vendor skips the sale")
+fire("MERCHANT_SHOW") -- the event comes before Blizzard shows the window
+check(#sold == 0, "nothing sold before the vendor window shows")
+MerchantFrame.shown = true
 flush()
 check(#sold == 2 and not bags[0][1] and not bags[0][2], "both linen stacks sold")
 check(bags[0][3] and bags[0][4] and bags[0][6], "refused, unmarked and other items kept")
