@@ -145,7 +145,7 @@ C_Container = {
         if not s then return nil end
         local it = ITEMS[s.link]
         return { hyperlink = s.link, quality = it.quality, isBound = s.bound == true, hasLoot = s.loot == true,
-            stackCount = s.count or 1 }
+            stackCount = s.count or 1, hasNoValue = it.noValue == true, isLocked = false }
     end,
     GetContainerNumSlots = function(bag) return bag == 0 and 8 or 0 end,
     GetContainerNumFreeSlots = function(bag)
@@ -155,6 +155,27 @@ C_Container = {
         return free, 0
     end,
 }
+
+-- Keys, money and the vendor ---------------------------------------------------------------
+local keys = { alt = false, shift = false, ctrl = false }
+function IsAltKeyDown() return keys.alt end
+function IsShiftKeyDown() return keys.shift end
+function IsControlKeyDown() return keys.ctrl end
+function CursorHasItem() return false end
+local money = 0
+function GetMoney() return money end
+function GetCoinTextureString(copper) return copper .. "c" end
+MerchantFrame = Region("Frame")
+MerchantFrame.shown = false
+local refused = {} -- links the vendor will not buy
+local sold = {}
+C_Container.UseContainerItem = function(bag, slot)
+    local s = bags[bag] and bags[bag][slot]
+    if not s or refused[s.link] then return end
+    sold[#sold + 1] = s.link
+    money = money + (ITEMS[s.link].price or 0) * (s.count or 1)
+    bags[bag][slot] = nil
+end
 
 -- Blizzard bag and bank frames -----------------------------------------------------------
 local function ItemButton(bag, slot)
@@ -358,6 +379,70 @@ combined:UpdateItems()
 flush()
 check(not cheap(4), "Blizzard's own vendor coin is not doubled")
 combined.buttons[4].JunkIcon = nil
+for slot = 1, 8 do bags[0][slot] = nil end
+combined:UpdateItems()
+flush()
+
+-- Alt-click marks an item for sale; at a vendor it sells.
+local function altClick(slot, mouse)
+    keys.alt = true
+    combined.buttons[slot].scripts.OnClick(combined.buttons[slot], mouse or "LeftButton")
+    keys.alt = false
+    flush()
+end
+local function marked(slot) return overlay(slot).sell.shown end
+local linen = Item("2589", { quality = 1, level = 5, price = 13 })
+local bear = Item("4000:0:0:0:0:0:-12", { quality = 2, level = 20, price = 500, equipLoc = "INVTYPE_WAIST", classID = 4, subClassID = 1 })
+local eagle = Item("4000:0:0:0:0:0:-17", { quality = 2, level = 20, price = 500, equipLoc = "INVTYPE_WAIST", classID = 4, subClassID = 1 })
+local hearth = Item("6948", { quality = 1, level = 1, noValue = true })
+local robe = Item("5000", { quality = 2, level = 22, price = 300, equipLoc = "INVTYPE_ROBE", classID = 4, subClassID = 1 })
+bags[0][1] = { link = linen, count = 5 }
+bags[0][2] = { link = linen, count = 3 }
+bags[0][3] = { link = bear }
+bags[0][4] = { link = eagle }
+bags[0][5] = { link = hearth }
+bags[0][6] = { link = robe }
+combined:UpdateItems()
+flush()
+check(type(combined.buttons[1].scripts.OnClick) == "function", "bag buttons get a click hook")
+combined.buttons[1].scripts.OnClick(combined.buttons[1], "LeftButton")
+flush()
+check(not marked(1), "plain click marks nothing")
+altClick(1, "RightButton")
+check(not marked(1), "alt-right-click marks nothing")
+altClick(1)
+check(marked(1) and marked(2) and overlay(1).sellWash.shown, "alt-click marks every stack of that item")
+altClick(3)
+check(marked(3) and not marked(4), "random suffixes marked apart")
+check(not overlay(3).arrow.shown, "no upgrade arrow on an item marked for sale")
+altClick(5)
+check(not marked(5) and printed[#printed]:find("No vendor price"), "unsellable items refuse a mark")
+altClick(6)
+altClick(6)
+check(not marked(6), "alt-click again unmarks")
+check(GearGlanceCharDB.sell["2589"] and GearGlanceCharDB.sell["4000:-12"], "marks saved per character")
+SlashCmdList.GEARGLANCE("off")
+flush()
+check(marked(1) and not overlay(6).level.shown, "marks stay visible with the markings off")
+SlashCmdList.GEARGLANCE("on")
+flush()
+
+refused[bear] = true
+fire("MERCHANT_SHOW") -- vendor window not open yet: nothing sold
+flush()
+check(#sold == 0 and bags[0][1], "no sale without the vendor window")
+MerchantFrame.shown = true
+fire("MERCHANT_SHOW")
+flush()
+check(#sold == 2 and not bags[0][1] and not bags[0][2], "both linen stacks sold")
+check(bags[0][3] and bags[0][4] and bags[0][6], "refused, unmarked and other items kept")
+check(printed[#printed]:find("Sold 2 items: 104c", 1, true), "summary counts only what sold")
+check(GearGlanceCharDB.sell["2589"] == nil, "mark dropped once the items are gone")
+check(GearGlanceCharDB.sell["4000:-12"] == true and marked(3), "refused item stays marked")
+fire("MERCHANT_CLOSED")
+MerchantFrame.shown = false
+refused[bear] = nil
+GearGlanceCharDB.sell = {}
 for slot = 1, 8 do bags[0][slot] = nil end
 combined:UpdateItems()
 flush()

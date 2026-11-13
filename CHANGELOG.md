@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0
+
+- Alt-click a bag item to mark it for sale (darkened, coin pile top right); alt-click again to unmark.
+  Marks are per character and cover every copy of the item.
+- At a vendor, marked items sell one by one, with a summary in chat. A mark is dropped once its items are gone.
+- Option "Alt-click: sell at vendor", on by default. Marks stay visible with the other markings off.
+
 ## 2.1.0
 
 - Bags full: a junk coin on the bag item worth least at a vendor (price x stack). Option "Coin on cheapest, bags full", on by default.

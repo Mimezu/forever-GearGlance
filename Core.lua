@@ -21,6 +21,7 @@ A.defaults = {
     showBinding = true,
     showOpenable = true,
     showCheapest = true,
+    sellMarks = true,
     textSize = 13,
     bagButton = true,
 }
@@ -30,6 +31,9 @@ local WUE_COLOR = { 0.15, 0.82, 0.74 }
 local BOA_COLOR = { 0.35, 0.72, 1.00 }
 local GLOW_COLOR = { 1.00, 0.78, 0.20 }
 local MAX_RETRIES = 10
+local SELL_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
+local SELL_DELAY = 0.2 -- seconds between sales, so the server keeps up
+local PREFIX = "|cffffd100Gear Glance|r "
 
 -- Item data ----------------------------------------------------------------------------
 
@@ -212,6 +216,142 @@ local function ScanCheapest()
 end
 A.ScanCheapest = ScanCheapest
 
+-- Sale marks -----------------------------------------------------------------------------
+-- Alt-click a bag item to mark it for sale; again to unmark. Marks are per
+-- character and cover every copy of that item (item ID plus random suffix,
+-- so "of the Bear" and "of the Eagle" stay apart). At a vendor the marked
+-- items are sold, and a mark is dropped once its items are gone.
+
+local function SaleKey(link)
+    local fields = link and link:match("item:([%-%d:]+)")
+    if not fields then return end
+    local id, suffix = fields:match("^(%d+):[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:([%-%d]*)")
+    if not id then id = fields:match("^(%d+)") end
+    if not id then return end
+    if suffix and suffix ~= "" and suffix ~= "0" then return id .. ":" .. suffix end
+    return id
+end
+A.SaleKey = SaleKey
+
+local function Marks()
+    if type(GearGlanceCharDB) ~= "table" then GearGlanceCharDB = {} end
+    if type(GearGlanceCharDB.sell) ~= "table" then GearGlanceCharDB.sell = {} end
+    return GearGlanceCharDB.sell
+end
+
+local function IsMarked(link)
+    local key = SaleKey(link)
+    return key ~= nil and Marks()[key] == true
+end
+
+local function BagButtonSlot(button)
+    if button.GetBankTabID or not (button.GetBagID and button.GetID) then return end
+    local bag, slot = button:GetBagID(), button:GetID()
+    if type(bag) == "number" and type(slot) == "number" and bag >= 0 and bag <= (NUM_BAG_SLOTS or 4) then
+        return bag, slot
+    end
+end
+
+-- Runs after Blizzard's own click handler (a post-hook, nothing replaced).
+local function OnBagClick(button, mouse)
+    if mouse ~= "LeftButton" or not A.db.sellMarks then return end
+    if not IsAltKeyDown() or IsShiftKeyDown() or IsControlKeyDown() then return end
+    if CursorHasItem and CursorHasItem() then return end
+    local bag, slot = BagButtonSlot(button)
+    local info = bag and C_Container.GetContainerItemInfo(bag, slot)
+    local key = info and SaleKey(info.hyperlink)
+    if not key then return end
+    local marks = Marks()
+    if marks[key] then
+        marks[key] = nil
+    elseif info.hasNoValue then
+        print(PREFIX .. "No vendor price.")
+        return
+    else
+        marks[key] = true
+    end
+    A.RefreshAll()
+end
+
+local hookedButtons = setmetatable({}, { __mode = "k" })
+local function HookBagButton(button)
+    if hookedButtons[button] or not button.HookScript then return end
+    hookedButtons[button] = true
+    button:HookScript("OnClick", OnBagClick)
+end
+
+-- Selling, one item per tick, while the vendor stays open.
+local selling, tried, startMoney, waits = false, {}, nil, 0
+local MAX_WAITS = 10 -- ticks to wait for the last sales to clear
+
+local function FinishSale()
+    selling = false
+    -- Sold = tried and no longer in its slot.
+    local soldCount, soldKeys = 0, {}
+    for _, try in pairs(tried) do
+        local info = C_Container.GetContainerItemInfo(try.bag, try.slot)
+        if not (info and info.hyperlink == try.link) then
+            soldCount, soldKeys[try.key] = soldCount + 1, true
+        end
+    end
+    tried = {}
+    if soldCount > 0 then
+        -- Unmark items that are all gone; any left (refused, or a sale cut short) stay marked.
+        local left = {}
+        for bag = 0, (NUM_BAG_SLOTS or 4) do
+            for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
+                local info = C_Container.GetContainerItemInfo(bag, slot)
+                local key = info and SaleKey(info.hyperlink)
+                if key then left[key] = true end
+            end
+        end
+        local marks = Marks()
+        for key in pairs(soldKeys) do
+            if not left[key] then marks[key] = nil end
+        end
+        local earned = (GetMoney and startMoney) and (GetMoney() - startMoney) or 0
+        local money = earned > 0 and GetCoinTextureString and (": " .. GetCoinTextureString(earned)) or ""
+        print(PREFIX .. ("Sold %d item%s%s"):format(soldCount, soldCount == 1 and "" or "s", money))
+    end
+    A.RefreshAll()
+end
+
+local function SellNext()
+    if not selling then return end
+    if not (MerchantFrame and MerchantFrame:IsShown()) then FinishSale(); return end
+    for bag = 0, (NUM_BAG_SLOTS or 4) do
+        for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            local key = info and not info.isLocked and not info.hasNoValue and SaleKey(info.hyperlink)
+            local spot = key and (bag .. ":" .. slot .. ":" .. info.hyperlink)
+            -- One try per slot: an item the vendor refuses is not retried forever.
+            if key and Marks()[key] and not tried[spot] then
+                tried[spot] = { bag = bag, slot = slot, link = info.hyperlink, key = key }
+                C_Container.UseContainerItem(bag, slot)
+                C_Timer.After(SELL_DELAY, SellNext)
+                return
+            end
+        end
+    end
+    -- Nothing left to try; give items still locked by a sale time to leave.
+    for _, try in pairs(tried) do
+        local info = C_Container.GetContainerItemInfo(try.bag, try.slot)
+        if info and info.hyperlink == try.link and info.isLocked and waits < MAX_WAITS then
+            waits = waits + 1
+            C_Timer.After(SELL_DELAY, SellNext)
+            return
+        end
+    end
+    FinishSale()
+end
+
+local function StartSale()
+    if selling or not (A.db and A.db.sellMarks) or not next(Marks()) then return end
+    selling, tried, waits = true, {}, 0
+    startMoney = GetMoney and GetMoney()
+    SellNext()
+end
+
 -- Overlay ---------------------------------------------------------------------------------
 
 local qualityColors = {}
@@ -254,6 +394,15 @@ function A.MakeOverlay(button)
     overlay.cheap = button:CreateTexture(nil, "OVERLAY", nil, 7)
     overlay.cheap:SetAtlas("bags-junkcoin", true)
     overlay.cheap:SetPoint("TOPLEFT", 1, 0)
+    -- Marked for sale: the icon darkened, a coin pile in the top-right corner.
+    overlay.sellWash = button:CreateTexture(nil, "OVERLAY", nil, 5)
+    overlay.sellWash:SetAllPoints(button)
+    overlay.sellWash:SetColorTexture(0, 0, 0, 0.5)
+    overlay.sell = button:CreateTexture(nil, "OVERLAY", nil, 7)
+    overlay.sell:SetTexture(SELL_ICON)
+    overlay.sell:SetSize(16, 16)
+    overlay.sell:SetPoint("TOPRIGHT", -2, -2)
+    overlay.sell:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     for _, region in pairs(overlay) do region:Hide() end
     overlays[button] = overlay
     return overlay
@@ -270,6 +419,7 @@ end
 
 local function Clear(overlay)
     overlay.level:Hide(); overlay.bind:Hide(); overlay.arrow:Hide(); overlay.glow:Hide(); overlay.cheap:Hide()
+    overlay.sell:Hide(); overlay.sellWash:Hide()
     overlay.key = nil
 end
 
@@ -291,7 +441,11 @@ function A.Paint(overlay, data)
     else
         overlay.level:Hide()
     end
-    overlay.arrow:SetShown(on and db.showArrow and data.upgrade == true)
+    -- Sale marks show even with the other markings off: a hidden mark would still sell.
+    local sell = data ~= nil and db.sellMarks and data.sell == true
+    overlay.sell:SetShown(sell)
+    overlay.sellWash:SetShown(sell)
+    overlay.arrow:SetShown(on and db.showArrow and data.upgrade == true and not sell)
     local bind = on and db.showBinding and data.bind
     if bind then
         overlay.bind:SetText(bind)
@@ -321,9 +475,10 @@ local function BagSlot(button)
 end
 
 local function Update(button)
+    if BagButtonSlot(button) then HookBagButton(button) end
     local overlay = overlays[button]
     local bag, slot = BagSlot(button)
-    local info = A.db.enabled and bag and C_Container.GetContainerItemInfo(bag, slot)
+    local info = (A.db.enabled or A.db.sellMarks) and bag and C_Container.GetContainerItemInfo(bag, slot)
     local link = info and info.hyperlink
     if not link then
         if overlay then Clear(overlay) end
@@ -332,12 +487,13 @@ local function Update(button)
     end
     local junk = button.JunkIcon and button.JunkIcon:IsShown() or false
     local cheap = bag == cheapBag and slot == cheapSlot and not button.GetBankTabID
+    local sell = not button.GetBankTabID and IsMarked(link)
     local key = link .. (info.isBound and "|b|" or "|u|") .. (junk and "j|" or "") .. (cheap and "c|" or "")
-        .. bag .. ":" .. slot
+        .. (sell and "s|" or "") .. bag .. ":" .. slot
     if overlay and overlay.key == key and overlay.rev == revision then return end
     overlay = overlay or A.MakeOverlay(button)
     local data = Analyze(bag, slot, info)
-    data.junk, data.cheap = junk, cheap
+    data.junk, data.cheap, data.sell = junk, cheap, sell
     A.Paint(overlay, data)
     if data.pending then
         -- Blizzard redraws its bags when their items load; the retries cover
@@ -457,6 +613,8 @@ events:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 events:RegisterEvent("PLAYER_LEVEL_UP")
 events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 events:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+events:RegisterEvent("MERCHANT_SHOW")
+events:RegisterEvent("MERCHANT_CLOSED")
 events:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then InitDB() end
@@ -467,6 +625,10 @@ events:SetScript("OnEvent", function(_, event, arg1)
         HookBank()
         if A.CreateBagButton then A.CreateBagButton() end
         A.RefreshAll()
+    elseif event == "MERCHANT_SHOW" then
+        StartSale()
+    elseif event == "MERCHANT_CLOSED" then
+        if selling then FinishSale() end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_LEVEL_UP" then
         wipe(equipped)
         A.RefreshAll()
@@ -489,7 +651,7 @@ SlashCmdList.GEARGLANCE = function(msg)
     msg = (msg or ""):lower():match("^%s*(.-)%s*$")
     if msg == "on" or msg == "off" then
         A.SetOption("enabled", msg == "on")
-        print("|cffffd100Gear Glance|r " .. (msg == "on" and "on." or "off."))
+        print(PREFIX .. (msg == "on" and "on." or "off."))
     elseif msg == "debug" then
         for _, line in ipairs(A.DebugBagButton and A.DebugBagButton() or {}) do
             print("|cffffd100Gear Glance|r " .. line)
