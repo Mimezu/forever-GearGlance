@@ -35,6 +35,18 @@ local function Region(kind)
         CreateTexture = function() return Region("Texture") end,
         CreateFontString = function() return Region("FontString") end,
         CreateMaskTexture = function() return Region("MaskTexture") end,
+        -- A plain table like the real one: no Show or Hide.
+        CreateAnimationGroup = function()
+            local group = { playing = false }
+            function group:SetLooping() end
+            function group:CreateAnimation()
+                return { SetFromAlpha = function() end, SetToAlpha = function() end, SetDuration = function() end }
+            end
+            function group:Play() self.playing = true end
+            function group:Stop() self.playing = false end
+            function group:IsPlaying() return self.playing end
+            return group
+        end,
         SetScript = function(self, name, fn) self.scripts[name] = fn end,
         GetScript = function(self, name) return self.scripts[name] end,
         HookScript = function(self, name, fn)
@@ -351,6 +363,7 @@ combined:UpdateItems()
 flush()
 check(anyCheap() == 1, "cheapest by stack value, unpriced items skipped")
 check(overlay(1).cheapGlow.shown and not overlay(2).cheapGlow.shown, "glowing border on the cheapest item")
+check(overlay(1).cheapPulse.playing and not overlay(2).cheapPulse.playing, "border pulses on the cheapest item only")
 local keep6, keep7, keep8 = bags[0][6], bags[0][7], bags[0][8]
 bags[0][6] = { link = Item("2901", { quality = 1, level = 1, price = 1 }) } -- Mining Pick
 bags[0][7] = { link = Item("6256", { quality = 1, level = 5, price = 1, equipLoc = "INVTYPE_2HWEAPON", classID = 2, subClassID = 20 }) } -- Fishing Pole

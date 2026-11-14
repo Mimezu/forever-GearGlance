@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.3
+
+- Fix for 2.2.2: an error while setting up each bag slot left stray coins on random items,
+  hid all item levels and broke alt-click marking. (The new border pulse was hidden along with the textures.)
+
 ## 2.2.2
 
 - Cheapest item: a pulsing orange border around it, under the coin, so it stands out in a full bag.

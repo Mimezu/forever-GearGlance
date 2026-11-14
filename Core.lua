@@ -426,15 +426,6 @@ function A.MakeOverlay(button)
     overlay.cheapGlow:SetAllPoints(button)
     overlay.cheapGlow:SetBlendMode("ADD")
     overlay.cheapGlow:SetVertexColor(CHEAP_COLOR[1], CHEAP_COLOR[2], CHEAP_COLOR[3])
-    local pulse = overlay.cheapGlow.CreateAnimationGroup and overlay.cheapGlow:CreateAnimationGroup()
-    if pulse then
-        pulse:SetLooping("BOUNCE")
-        local fade = pulse:CreateAnimation("Alpha")
-        fade:SetFromAlpha(1)
-        fade:SetToAlpha(0.3)
-        fade:SetDuration(0.7)
-        overlay.cheapPulse = pulse
-    end
     -- Marked for sale: the icon darkened, a coin pile in the top-right corner.
     overlay.sellWash = button:CreateTexture(nil, "OVERLAY", nil, 5)
     overlay.sellWash:SetAllPoints(button)
@@ -445,6 +436,16 @@ function A.MakeOverlay(button)
     overlay.sell:SetPoint("TOPRIGHT", -2, -2)
     overlay.sell:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     for _, region in pairs(overlay) do region:Hide() end
+    -- Made after the loop above: an animation group has no Hide.
+    local pulse = overlay.cheapGlow.CreateAnimationGroup and overlay.cheapGlow:CreateAnimationGroup()
+    if pulse then
+        pulse:SetLooping("BOUNCE")
+        local fade = pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(0.3)
+        fade:SetDuration(0.7)
+        overlay.cheapPulse = pulse
+    end
     overlays[button] = overlay
     return overlay
 end
