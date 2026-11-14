@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.1
+
+- Fix: the backpack button showed through windows covering the bag (it sat one strata above the bag). It now shares the bag's strata and follows its level.
+
 ## 2.3.0
 
 - Key to open the window, set from the window itself (Buttons card) or from Key Bindings > AddOns.

@@ -474,10 +474,10 @@ end
 
 local BUTTON_SCALE = 0.7          -- 31px minimap button -> about 22px, the title bar's height
 -- The bags are toplevel frames: opening or clicking one raises it above
--- everything else in its strata, which would bury a button in the same
--- strata. So the button lives one strata above the bag.
-local STRATA_ABOVE = { BACKGROUND = "LOW", LOW = "MEDIUM", MEDIUM = "HIGH", HIGH = "DIALOG",
-    DIALOG = "FULLSCREEN", FULLSCREEN = "FULLSCREEN_DIALOG", FULLSCREEN_DIALOG = "TOOLTIP" }
+-- everything else in its strata. The button shares the bag's strata (a
+-- strata above floated it over windows covering the bag) and follows the
+-- bag's level: just above its title bar, re-checked each frame while shown.
+local LEVEL_ABOVE_TITLE = 2
 local BAGS = { "ContainerFrameCombinedBags", "ContainerFrame1" } -- combined, or the backpack
 
 local bagButton
@@ -545,9 +545,23 @@ local function BagOwner()
     end
 end
 
+local function Secret(value) return issecretvalue and issecretvalue(value) end
+
+-- Keep the button just above the bag's title bar as the bag is raised.
+local function FollowBagLevel(self)
+    local owner = self.owner
+    if not owner then return end
+    local ref = owner.TitleContainer or owner
+    local level = ref:GetFrameLevel()
+    if not level or Secret(level) then return end
+    local want = level + LEVEL_ABOVE_TITLE
+    if self:GetFrameLevel() ~= want then self:SetFrameLevel(want) end
+end
+
 function A.UpdateBagButton()
     if not bagButton then return end
     local owner = A.db.bagButton and BagOwner()
+    bagButton.owner = owner
     if not owner then bagButton:Hide(); return end
     bagButton:ClearAllPoints()
     local title = owner.TitleContainer
@@ -559,8 +573,9 @@ function A.UpdateBagButton()
     end
     -- Since build 70338 a frame's strata can be a secret value.
     local strata = owner:GetFrameStrata()
-    if issecretvalue and issecretvalue(strata) then strata = nil end
-    bagButton:SetFrameStrata(strata and STRATA_ABOVE[strata] or "HIGH")
+    if Secret(strata) then strata = nil end
+    bagButton:SetFrameStrata(strata or "MEDIUM")
+    FollowBagLevel(bagButton)
     PaintEnabled(bagButton)
     bagButton:Show()
 end
@@ -589,6 +604,7 @@ function A.CreateBagButton()
     bagButton = RoundButton("GearGlanceBagButton", UIParent, "ANCHOR_TOPLEFT")
     bagButton:Hide()
     bagButton:SetScale(BUTTON_SCALE)
+    bagButton:SetScript("OnUpdate", FollowBagLevel) -- runs only while shown
     for _, name in ipairs(BAGS) do
         local bag = _G[name]
         if bag then

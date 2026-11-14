@@ -56,7 +56,8 @@ local function Region(kind)
         GetChecked = function(self) return self.checked end,
         SetChecked = function(self, v) self.checked = v end,
         GetFontString = function(self) rawset(self, "fs", rawget(self, "fs") or Region("FontString")); return rawget(self, "fs") end,
-        GetFrameLevel = function() return 5 end,
+        GetFrameLevel = function(self) return rawget(self, "level") or 5 end,
+        SetFrameLevel = function(self, v) self.level = v end,
         GetFrameStrata = function(self) return rawget(self, "strata") or "MEDIUM" end,
         SetFrameStrata = function(self, v) self.strata = v end,
         GetCenter = function() return 100, 200 end,
@@ -283,7 +284,11 @@ flush()
 -- Find the overlay regions: MakeOverlay is exposed, so read them back through it.
 local function overlay(slot) return ns.MakeOverlay(combined.buttons[slot]) end
 check(GearGlanceBagButton:IsShown(), "bag button shows with the bags")
-check(GearGlanceBagButton.strata == "HIGH", "bag button one strata above the MEDIUM bag")
+check(GearGlanceBagButton.strata == "MEDIUM", "bag button in the bag's strata, not above other windows")
+check(GearGlanceBagButton:GetFrameLevel() == 7, "bag button just above the title bar")
+combined.TitleContainer.level = 40 -- the bag raised over another window
+GearGlanceBagButton.scripts.OnUpdate(GearGlanceBagButton)
+check(GearGlanceBagButton:GetFrameLevel() == 42, "bag button follows the raised bag")
 SlashCmdList.GEARGLANCE("debug")
 check(#printed >= 3 and printed[#printed]:find("button: shown=true"), "/gg debug reports the button")
 check(GearGlanceBagButton.points[1][1] == "LEFT" and GearGlanceBagButton.points[1][2] == combined.TitleContainer,
