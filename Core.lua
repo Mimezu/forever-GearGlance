@@ -30,6 +30,7 @@ A.TEXT_MIN, A.TEXT_MAX = 10, 16
 local WUE_COLOR = { 0.15, 0.82, 0.74 }
 local BOA_COLOR = { 0.35, 0.72, 1.00 }
 local GLOW_COLOR = { 1.00, 0.78, 0.20 }
+local CHEAP_COLOR = { 1.00, 0.35, 0.10 } -- orange-red, apart from the gold "can open" glow
 local MAX_RETRIES = 10
 local SELL_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 local SELL_DELAY = 0.2 -- seconds between sales, so the server keeps up
@@ -181,6 +182,27 @@ end
 -- value (price x stack) gets a junk coin: the one to sell or drop for room.
 -- Items with no vendor price (quest items, the hearthstone) are skipped.
 
+-- Profession tools are never "cheapest": you need them, whatever they sell for.
+local TOOLS = {
+    [2901] = true,  -- Mining Pick
+    [5956] = true,  -- Blacksmith Hammer
+    [7005] = true,  -- Skinning Knife
+    [4471] = true,  -- Flint and Tinder
+    [6219] = true,  -- Arclight Spanner
+    [10498] = true, -- Gyromatic Micro-Adjustor
+    [9149] = true,  -- Philosopher's Stone
+    [6218] = true, [6339] = true, [11130] = true, [11145] = true, [16207] = true, -- Runed enchanting rods
+}
+local WEAPON_CLASS, FISHING_POLE = 2, 20
+local TOOL_SLOTS = { INVTYPE_PROFESSION_TOOL = true, INVTYPE_PROFESSION_GEAR = true }
+
+local function IsTool(link, equipLoc, classID, subClassID)
+    local id = tonumber(link:match("item:(%d+)"))
+    return (id and TOOLS[id]) or TOOL_SLOTS[equipLoc]
+        or (classID == WEAPON_CLASS and subClassID == FISHING_POLE) or false
+end
+A.IsTool = IsTool
+
 local cheapBag, cheapSlot
 local cheapIncomplete = false -- an item's price was still loading
 
@@ -201,10 +223,10 @@ local function ScanCheapest()
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
             if info and info.hyperlink and not info.hasNoValue then
-                local name, _, _, _, _, _, _, _, _, _, price = C_Item.GetItemInfo(info.hyperlink)
+                local name, _, _, _, _, _, _, _, equipLoc, _, price, classID, subClassID = C_Item.GetItemInfo(info.hyperlink)
                 if not name then
                     cheapIncomplete = true
-                elseif price and price > 0 then
+                elseif price and price > 0 and not IsTool(info.hyperlink, equipLoc, classID, subClassID) then
                     local value = price * (info.stackCount or 1)
                     if not lowest or value < lowest then
                         lowest, cheapBag, cheapSlot = value, bag, slot
@@ -398,6 +420,21 @@ function A.MakeOverlay(button)
     overlay.cheap = button:CreateTexture(nil, "OVERLAY", nil, 7)
     overlay.cheap:SetAtlas("bags-junkcoin", true)
     overlay.cheap:SetPoint("TOPLEFT", 1, 0)
+    -- A pulsing border, so the cheapest item stands out in a full bag.
+    overlay.cheapGlow = button:CreateTexture(nil, "OVERLAY", nil, 6)
+    overlay.cheapGlow:SetAtlas("bags-glow-white")
+    overlay.cheapGlow:SetAllPoints(button)
+    overlay.cheapGlow:SetBlendMode("ADD")
+    overlay.cheapGlow:SetVertexColor(CHEAP_COLOR[1], CHEAP_COLOR[2], CHEAP_COLOR[3])
+    local pulse = overlay.cheapGlow.CreateAnimationGroup and overlay.cheapGlow:CreateAnimationGroup()
+    if pulse then
+        pulse:SetLooping("BOUNCE")
+        local fade = pulse:CreateAnimation("Alpha")
+        fade:SetFromAlpha(1)
+        fade:SetToAlpha(0.3)
+        fade:SetDuration(0.7)
+        overlay.cheapPulse = pulse
+    end
     -- Marked for sale: the icon darkened, a coin pile in the top-right corner.
     overlay.sellWash = button:CreateTexture(nil, "OVERLAY", nil, 5)
     overlay.sellWash:SetAllPoints(button)
@@ -422,7 +459,8 @@ local function StyleFonts(overlay)
 end
 
 local function Clear(overlay)
-    overlay.level:Hide(); overlay.bind:Hide(); overlay.arrow:Hide(); overlay.glow:Hide(); overlay.cheap:Hide()
+    overlay.level:Hide(); overlay.bind:Hide(); overlay.arrow:Hide(); overlay.glow:Hide(); overlay.cheap:Hide(); overlay.cheapGlow:Hide()
+    if overlay.cheapPulse then overlay.cheapPulse:Stop() end
     overlay.sell:Hide(); overlay.sellWash:Hide()
     overlay.key = nil
 end
@@ -438,6 +476,11 @@ function A.Paint(overlay, data)
     -- the cheapest item gets the same coin when the bags are full.
     local cheap = on and db.showCheapest and data.cheap == true and not data.junk
     overlay.cheap:SetShown(cheap)
+    overlay.cheapGlow:SetShown(cheap)
+    if overlay.cheapPulse then
+        if cheap and not overlay.cheapPulse:IsPlaying() then overlay.cheapPulse:Play()
+        elseif not cheap then overlay.cheapPulse:Stop() end
+    end
     if on and db.showItemLevel and data.level and not data.junk and not cheap then
         overlay.level:SetText(data.level)
         overlay.level:SetTextColor(r, g, b)

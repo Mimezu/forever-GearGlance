@@ -350,6 +350,17 @@ bags[0][5] = { link = Item("Gloves", { quality = 2, level = 15, price = 150, equ
 combined:UpdateItems()
 flush()
 check(anyCheap() == 1, "cheapest by stack value, unpriced items skipped")
+check(overlay(1).cheapGlow.shown and not overlay(2).cheapGlow.shown, "glowing border on the cheapest item")
+local keep6, keep7, keep8 = bags[0][6], bags[0][7], bags[0][8]
+bags[0][6] = { link = Item("2901", { quality = 1, level = 1, price = 1 }) } -- Mining Pick
+bags[0][7] = { link = Item("6256", { quality = 1, level = 5, price = 1, equipLoc = "INVTYPE_2HWEAPON", classID = 2, subClassID = 20 }) } -- Fishing Pole
+bags[0][8] = { link = Item("9999", { quality = 1, level = 1, price = 1, equipLoc = "INVTYPE_PROFESSION_TOOL" }) }
+combined:UpdateItems()
+flush()
+check(anyCheap() == 1, "profession tools are never the cheapest")
+bags[0][6], bags[0][7], bags[0][8] = keep6, keep7, keep8
+combined:UpdateItems()
+flush()
 bags[0][1] = nil
 combined:UpdateItems()
 flush()

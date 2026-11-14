@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.2
+
+- Cheapest item: a pulsing orange border around it, under the coin, so it stands out in a full bag.
+- Profession tools are never picked as cheapest: mining pick, blacksmith hammer, skinning knife,
+  fishing poles, flint and tinder, enchanting rods, engineering tools, Philosopher's Stone.
+
 ## 2.2.1
 
 - Fix: marked items did not sell. The sale started before Blizzard showed the vendor window and stopped at once; it now waits a tick.
