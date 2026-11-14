@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.2
+
+- Fix for 2.3.1: the backpack button was hidden under the bag's border. It now sits one level above the bag's highest child frame (one strata above if levels can't be read). `/gg debug` shows the offset.
+
 ## 2.3.1
 
 - Fix: the backpack button showed through windows covering the bag (it sat one strata above the bag). It now shares the bag's strata and follows its level.

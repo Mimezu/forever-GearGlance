@@ -475,9 +475,12 @@ end
 local BUTTON_SCALE = 0.7          -- 31px minimap button -> about 22px, the title bar's height
 -- The bags are toplevel frames: opening or clicking one raises it above
 -- everything else in its strata. The button shares the bag's strata (a
--- strata above floated it over windows covering the bag) and follows the
--- bag's level: just above its title bar, re-checked each frame while shown.
-local LEVEL_ABOVE_TITLE = 2
+-- strata above floated it over windows covering the bag) and sits one level
+-- above the bag's highest child frame (border, portrait, title, slots),
+-- following the bag each frame while shown. If levels can't be read (secret
+-- values), it falls back to one strata above the bag.
+local STRATA_ABOVE = { BACKGROUND = "LOW", LOW = "MEDIUM", MEDIUM = "HIGH", HIGH = "DIALOG",
+    DIALOG = "FULLSCREEN", FULLSCREEN = "FULLSCREEN_DIALOG", FULLSCREEN_DIALOG = "TOOLTIP" }
 local BAGS = { "ContainerFrameCombinedBags", "ContainerFrame1" } -- combined, or the backpack
 
 local bagButton
@@ -547,14 +550,31 @@ end
 
 local function Secret(value) return issecretvalue and issecretvalue(value) end
 
--- Keep the button just above the bag's title bar as the bag is raised.
+-- How far the bag's highest child frame sits above the bag itself; nil when
+-- a level is secret.
+local function TopChildOffset(bag)
+    local base = bag:GetFrameLevel()
+    if not base or Secret(base) then return nil end
+    local top = base
+    local function Scan(...)
+        for i = 1, select("#", ...) do
+            local level = select(i, ...):GetFrameLevel()
+            if Secret(level) then return false end
+            if level and level > top then top = level end
+        end
+        return true
+    end
+    if bag.GetChildren and not Scan(bag:GetChildren()) then return nil end
+    return top - base
+end
+
+-- Keep the button one level above the bag's top child as the bag is raised.
 local function FollowBagLevel(self)
-    local owner = self.owner
-    if not owner then return end
-    local ref = owner.TitleContainer or owner
-    local level = ref:GetFrameLevel()
+    local owner, offset = self.owner, self.levelOffset
+    if not (owner and offset) then return end
+    local level = owner:GetFrameLevel()
     if not level or Secret(level) then return end
-    local want = level + LEVEL_ABOVE_TITLE
+    local want = level + offset + 1
     if self:GetFrameLevel() ~= want then self:SetFrameLevel(want) end
 end
 
@@ -574,8 +594,14 @@ function A.UpdateBagButton()
     -- Since build 70338 a frame's strata can be a secret value.
     local strata = owner:GetFrameStrata()
     if Secret(strata) then strata = nil end
-    bagButton:SetFrameStrata(strata or "MEDIUM")
-    FollowBagLevel(bagButton)
+    local offset = strata and TopChildOffset(owner)
+    bagButton.levelOffset = offset
+    if offset then
+        bagButton:SetFrameStrata(strata)
+        FollowBagLevel(bagButton)
+    else
+        bagButton:SetFrameStrata(strata and STRATA_ABOVE[strata] or "HIGH")
+    end
     PaintEnabled(bagButton)
     bagButton:Show()
 end
@@ -591,6 +617,7 @@ function A.DebugBagButton()
             .. " level=" .. bag:GetFrameLevel() .. " title=" .. tostring(bag.TitleContainer ~= nil)) or "missing"))
     end
     if bagButton then
+        Add("top child offset=" .. tostring(bagButton.levelOffset) .. " (nil: strata above)")
         local x, y = bagButton:GetCenter()
         Add(("button: shown=%s visible=%s strata=%s level=%d scale=%.2f center=%s,%s"):format(
             tostring(bagButton:IsShown()), tostring(bagButton:IsVisible()), bagButton:GetFrameStrata(),

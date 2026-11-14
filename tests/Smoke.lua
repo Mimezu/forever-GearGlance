@@ -207,6 +207,10 @@ combined.EnumerateValidItems = function(self)
 end
 combined.UpdateItems = function() end
 combined.TitleContainer = Region("Frame")
+combined.TitleContainer.level = 6
+local border = Region("Frame") -- NineSlice, drawn above the title
+border.level = 12
+combined.GetChildren = function() return combined.TitleContainer, border end
 ContainerFrameCombinedBags = combined
 ContainerFrame1 = Region("Frame")
 ContainerFrame1.shown = false
@@ -285,10 +289,11 @@ flush()
 local function overlay(slot) return ns.MakeOverlay(combined.buttons[slot]) end
 check(GearGlanceBagButton:IsShown(), "bag button shows with the bags")
 check(GearGlanceBagButton.strata == "MEDIUM", "bag button in the bag's strata, not above other windows")
-check(GearGlanceBagButton:GetFrameLevel() == 7, "bag button just above the title bar")
-combined.TitleContainer.level = 40 -- the bag raised over another window
+check(GearGlanceBagButton:GetFrameLevel() == 13, "bag button one level above the bag's top child (border at 12)")
+combined.level = 40 -- the bag raised over another window
 GearGlanceBagButton.scripts.OnUpdate(GearGlanceBagButton)
-check(GearGlanceBagButton:GetFrameLevel() == 42, "bag button follows the raised bag")
+check(GearGlanceBagButton:GetFrameLevel() == 48, "bag button follows the raised bag")
+combined.level = nil
 SlashCmdList.GEARGLANCE("debug")
 check(#printed >= 3 and printed[#printed]:find("button: shown=true"), "/gg debug reports the button")
 check(GearGlanceBagButton.points[1][1] == "LEFT" and GearGlanceBagButton.points[1][2] == combined.TitleContainer,
