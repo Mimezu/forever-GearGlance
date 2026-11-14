@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+- Key to open the window, set from the window itself (Buttons card) or from Key Bindings > AddOns.
+- Minimap button: click opens the window, right-click turns Gear Glance on or off, drag to move. Shown by default.
+- Page in Esc > Options > AddOns: Open, minimap icon, key.
+
 ## 2.2.3
 
 - Fix for 2.2.2: an error while setting up each bag slot left stray coins on random items,

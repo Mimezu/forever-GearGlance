@@ -1,0 +1,5 @@
+<Bindings>
+    <Binding name="GEARGLANCE_TOGGLE" header="GEARGLANCE" category="ADDONS">
+        GearGlance_ToggleOptions()
+    </Binding>
+</Bindings>

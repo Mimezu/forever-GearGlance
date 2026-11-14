@@ -24,6 +24,8 @@ A.defaults = {
     sellMarks = true,
     textSize = 13,
     bagButton = true,
+    minimapButton = true,
+    minimapAngle = 200, -- degrees round the minimap, 0 = east
 }
 A.TEXT_MIN, A.TEXT_MAX = 10, 16
 
@@ -642,6 +644,7 @@ function A.SetOption(key, value)
     A.RefreshAll()
     if A.RefreshOptions then A.RefreshOptions() end
     if A.UpdateBagButton then A.UpdateBagButton() end
+    if A.UpdateMinimapButton then A.UpdateMinimapButton() end
 end
 
 local function InitDB()
@@ -673,6 +676,8 @@ events:SetScript("OnEvent", function(_, event, arg1, ...)
         HookBags()
         HookBank()
         if A.CreateBagButton then A.CreateBagButton() end
+        if A.CreateMinimapButton then A.CreateMinimapButton() end
+        if A.RegisterSettings then pcall(A.RegisterSettings) end
         A.RefreshAll()
     elseif event == "MERCHANT_SHOW" then
         StartSale()
@@ -698,6 +703,10 @@ HookBank() -- the bank template is part of the base UI; hook before any bank ope
 function GearGlance_ToggleOptions()
     if A.ToggleOptions then A.ToggleOptions() end
 end
+
+-- Key bindings (Bindings.xml).
+BINDING_HEADER_GEARGLANCE = "Gear Glance"
+BINDING_NAME_GEARGLANCE_TOGGLE = "Open Gear Glance"
 
 SLASH_GEARGLANCE1 = "/gg"
 SLASH_GEARGLANCE2 = "/gearglance"

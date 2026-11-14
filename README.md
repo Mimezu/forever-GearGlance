@@ -14,6 +14,8 @@ A small Forever version of the retail Gear Glance. It marks your bag and bank it
 
 - `/gg` opens the options. `/gg on` and `/gg off` turn the markings on or off.
 - The small round button in the backpack's title bar (next to the portrait) opens the options too; right-click it to turn Gear Glance on or off. It sits on the combined bag, or on the backpack when bags are separate.
+- A minimap button does the same (drag it round the edge); hide it in the window's Buttons card.
+- A key opens the window: set it in the Buttons card, or in Esc > Options > AddOns > Gear Glance.
 - It is also listed in the minimap's addon menu.
 
 ## What was left out (compared with retail)

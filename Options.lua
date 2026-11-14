@@ -1,19 +1,22 @@
--- The Gear Glance window (a Legacy frame, like Petal and Forever Names) and
--- the small round button on the backpack that opens it.
+-- The Gear Glance window (a Legacy frame, like Petal and Forever Names), the
+-- small round buttons on the backpack and the minimap that open it, its key,
+-- and its page in the game's AddOns settings.
 
 local _, A = ...
 
-local W, H = 560, 448
+local W, H = 560, 474
 local PW = W - 48            -- content width
 local GAP = 10
 local CW = (PW - GAP) / 2    -- card width
 local RIGHT = CW + GAP
-local H1, H2 = 234, 108      -- card rows
+local H1, H2 = 234, 134      -- card rows
 local TOP = 36               -- first control below a card title
 local LABEL_X = 34           -- where a checkbox label starts (box at 10, text at +24)
 local NOTE, DIM = { 0.80, 0.77, 0.70 }, { 0.5, 0.5, 0.5 }
 local GOLD = { 1, 0.82, 0 }
 local BUTTON_ICON = "Interface\\Icons\\INV_Misc_Spyglass_02"
+local PREFIX = "|cffffd100Gear Glance|r "
+local TOGGLE = "GEARGLANCE_TOGGLE" -- Bindings.xml
 
 -- Made-up items for the preview; painted with the same code as real ones.
 local SAMPLES = {
@@ -143,6 +146,131 @@ local function Segmented(parent, x, y, width, choices, get, set)
     return buttons
 end
 
+-- Keys ----------------------------------------------------------------------------------
+-- The window's key, set right here: a keycap; click it and press a key
+-- (modifiers combine, Esc cancels), right-click clears. Saved with the
+-- game's key bindings.
+
+local MODIFIER_KEYS = { LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true,
+    LALT = true, RALT = true, LMETA = true, RMETA = true }
+local NEVER = { ENTER = true, BACKSPACE = true } -- the chat's
+local keySetters, listening = {}, nil
+
+local function InCombat() return InCombatLockdown and InCombatLockdown() end
+
+function A.BoundKey(action)
+    local key = GetBindingKey and GetBindingKey(action)
+    if not key then return nil end
+    return GetBindingText and GetBindingText(key) or key
+end
+
+-- The key pressed, with its modifiers, as the bindings write it.
+function A.KeyCombo(key)
+    return (IsAltKeyDown() and "ALT-" or "") .. (IsControlKeyDown() and "CTRL-" or "")
+        .. (IsShiftKeyDown() and "SHIFT-" or "") .. (IsMetaKeyDown and IsMetaKeyDown() and "META-" or "") .. key
+end
+
+function A.RefreshKeys()
+    for _, setter in ipairs(keySetters) do setter:Update() end
+end
+
+-- Binds `key` to `action` in place of the action's old keys; nil clears.
+-- Says what the key did before. Out of combat only.
+function A.BindKey(action, key)
+    if InCombat() then print(PREFIX .. "Not in combat."); return false end
+    if not SetBinding then return false end
+    for _, old in ipairs({ GetBindingKey(action) }) do SetBinding(old) end
+    if key then
+        local before = GetBindingAction and GetBindingAction(key)
+        SetBinding(key, action)
+        if before and before ~= "" and before ~= action then
+            print(PREFIX .. (GetBindingText and GetBindingText(key) or key) .. " no longer: "
+                .. (_G["BINDING_NAME_" .. before] or before))
+        end
+    end
+    if SaveBindings then SaveBindings(GetCurrentBindingSet and GetCurrentBindingSet() or 1) end
+    A.RefreshKeys()
+    return true
+end
+
+local function StopListening()
+    local setter = listening
+    listening = nil
+    if setter then
+        setter:SetScript("OnKeyDown", nil)
+        setter:EnableKeyboard(false)
+    end
+    A.RefreshKeys()
+end
+
+local function Listen(setter)
+    if InCombat() then print(PREFIX .. "Not in combat."); return end
+    if listening then StopListening() end
+    listening = setter
+    setter:EnableKeyboard(true)
+    if setter.SetPropagateKeyboardInput then setter:SetPropagateKeyboardInput(false) end
+    setter:SetScript("OnKeyDown", function(self, key)
+        if MODIFIER_KEYS[key] then return end
+        if key == "ESCAPE" then StopListening(); return end
+        if NEVER[key] then print(PREFIX .. "That key stays with the game."); return end
+        local combo = A.KeyCombo(key)
+        StopListening()
+        A.BindKey(self.action, combo)
+    end)
+    A.RefreshKeys()
+end
+
+-- A keycap: a dark key face with a thicker front edge, the key on it.
+local KEY_W, KEY_H = 110, 22
+local function KeySetter(parent, action)
+    local setter = CreateFrame("Button", nil, parent)
+    setter.action = action
+    setter:SetSize(KEY_W, KEY_H)
+    setter:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    local face = setter:CreateTexture(nil, "BACKGROUND")
+    face:SetAllPoints()
+    face:SetColorTexture(0, 0, 0, 0.4)
+    Line(setter, 0, 0, KEY_W, 1, 0.4); Line(setter, 0, 0, 1, KEY_H, 0.4); Line(setter, KEY_W - 1, 0, 1, KEY_H, 0.4)
+    Line(setter, 0, -KEY_H + 2, KEY_W, 2, 0.7)
+    local hover = setter:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(1, 0.72, 0.2, 0.12)
+    setter.text = setter:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    setter.text:SetPoint("CENTER", 0, 1)
+    function setter:Update()
+        if listening == self then
+            self.text:SetText("Press a key"); self.text:SetTextColor(unpack(GOLD))
+        else
+            local key = A.BoundKey(self.action)
+            self.text:SetText(key or "Not set"); self.text:SetTextColor(unpack(key and { 1, 1, 1 } or DIM))
+        end
+    end
+    setter:SetScript("OnClick", function(self, mouse)
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        if mouse == "RightButton" then
+            if listening then StopListening() end
+            A.BindKey(self.action, nil)
+        elseif listening == self then
+            StopListening()
+        else
+            Listen(self)
+        end
+    end)
+    setter:SetScript("OnHide", function(self) if listening == self then StopListening() end end)
+    Tooltip(setter, _G["BINDING_NAME_" .. action] or action, "Click: set\nRight-click: clear")
+    keySetters[#keySetters + 1] = setter
+    setter:Update()
+    return setter
+end
+
+-- Combat stops listening; keys changed in Blizzard's list show here.
+local keyEvents = CreateFrame("Frame")
+keyEvents:RegisterEvent("PLAYER_REGEN_DISABLED")
+keyEvents:RegisterEvent("UPDATE_BINDINGS")
+keyEvents:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" and listening then StopListening() else A.RefreshKeys() end
+end)
+
 -- Cards ---------------------------------------------------------------------------------
 
 local function BuildContent(page)
@@ -207,9 +335,14 @@ local function BuildContent(page)
     Tooltip(colors[1], "Quality", "Item level in the item's quality color.")
     Tooltip(colors[2], "White", "Item level in white.")
 
-    local bags = Card(page, "Bags", RIGHT, -H1 - GAP, CW, H2)
-    Check(bags, "bagButton", "Button on the backpack", 10, -TOP)
-    Note(bags, "Click: open this window\nRight-click: turn on or off\nOr type /gg", LABEL_X, -TOP - 26, CW - LABEL_X - 10)
+    local buttons = Card(page, "Buttons", RIGHT, -H1 - GAP, CW, H2)
+    local bagCheck = Check(buttons, "bagButton", "On the backpack", 10, -TOP)
+    Tooltip(bagCheck, "Backpack button", "Click: this window\nRight-click: on or off")
+    Check(buttons, "minimapButton", "Minimap icon", 10, -TOP - 26)
+    Text(buttons, "Key", 12, -TOP - 62)
+    local key = KeySetter(buttons, TOGGLE)
+    key:SetPoint("TOPLEFT", 70, -TOP - 58)
+    Note(buttons, "/gg", 70 + KEY_W + 10, -TOP - 63)
 
     updaters[#updaters + 1] = function()
         local on = db.enabled
@@ -222,7 +355,11 @@ end
 
 -- Window --------------------------------------------------------------------------------
 
+local settingsCheck
+
 function A.RefreshOptions()
+    if settingsCheck then settingsCheck:SetChecked(A.db.minimapButton == true) end
+    A.RefreshKeys()
     if not (frame and frame:IsShown()) then return end
     for _, entry in ipairs(checks) do entry.check:SetChecked(A.db[entry.key] == true) end
     for _, update in ipairs(updaters) do update() end
@@ -281,6 +418,53 @@ function A.ToggleOptions()
     frame:SetShown(not frame:IsShown())
 end
 
+function A.ShowOptions()
+    if not A.db then return end
+    if not frame then Build() end
+    frame:Show()
+end
+
+-- AddOns settings page ------------------------------------------------------------------
+-- Esc > Options > AddOns > Gear Glance: a way to the window, the minimap
+-- icon and the key.
+
+function A.RegisterSettings()
+    if A.settingsCategory or not (Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory) then
+        return
+    end
+    local panel = CreateFrame("Frame")
+    local heading = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    heading:SetPoint("TOPLEFT", 16, -16)
+    heading:SetText("Gear Glance")
+    local open = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    open:SetSize(140, 26)
+    open:SetPoint("TOPLEFT", 16, -48)
+    open:SetText("Open")
+    open:SetScript("OnClick", function()
+        if SettingsPanel and SettingsPanel:IsShown() and HideUIPanel then HideUIPanel(SettingsPanel) end
+        A.ShowOptions()
+    end)
+    Text(panel, "/gg", 168, -54, "GameFontHighlight", nil, NOTE)
+    local check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
+    check:SetPoint("TOPLEFT", 14, -86)
+    check:SetSize(26, 26)
+    local label = check.Text or check.text
+    label:SetFontObject("GameFontHighlight")
+    label:SetText("Minimap icon")
+    check:SetScript("OnClick", function(self)
+        PlaySound(self:GetChecked() and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON or SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        A.SetOption("minimapButton", self:GetChecked() == true)
+    end)
+    settingsCheck = check
+    Text(panel, "Key", 16, -126)
+    local key = KeySetter(panel, TOGGLE)
+    key:SetPoint("TOPLEFT", 70, -122)
+    panel:SetScript("OnShow", function() A.RefreshOptions() end)
+    local category = Settings.RegisterCanvasLayoutCategory(panel, "Gear Glance")
+    Settings.RegisterAddOnCategory(category)
+    A.settingsCategory, A.settingsPanel = category, panel
+end
+
 -- Bag button ----------------------------------------------------------------------------
 -- A small round button in the bag's title bar, next to the portrait, drawn
 -- like a minimap addon button. It sits on the combined bag, or on the
@@ -298,61 +482,12 @@ local BAGS = { "ContainerFrameCombinedBags", "ContainerFrame1" } -- combined, or
 
 local bagButton
 
-local function BagOwner()
-    for _, name in ipairs(BAGS) do
-        local bag = _G[name]
-        if bag and bag:IsShown() then return bag end
-    end
-end
-
-function A.UpdateBagButton()
-    if not bagButton then return end
-    local owner = A.db.bagButton and BagOwner()
-    if not owner then bagButton:Hide(); return end
-    bagButton:ClearAllPoints()
-    local title = owner.TitleContainer
-    if title then
-        -- Title bar starts right of the portrait; sit at its left end, centred.
-        bagButton:SetPoint("LEFT", title, "LEFT", 1 / BUTTON_SCALE, 0)
-    else
-        bagButton:SetPoint("TOPLEFT", owner, "TOPLEFT", 58 / BUTTON_SCALE, 0)
-    end
-    -- Since build 70338 a frame's strata can be a secret value.
-    local strata = owner:GetFrameStrata()
-    if issecretvalue and issecretvalue(strata) then strata = nil end
-    bagButton:SetFrameStrata(strata and STRATA_ABOVE[strata] or "HIGH")
-    bagButton.icon:SetDesaturated(not A.db.enabled)
-    bagButton.icon:SetAlpha(A.db.enabled and 1 or 0.6)
-    bagButton:Show()
-end
-
--- Same pieces and offsets as the usual minimap addon button (LibDBIcon).
--- /gg debug: where the button is, for when it can't be seen.
-function A.DebugBagButton()
-    local lines = {}
-    local function Add(text) lines[#lines + 1] = text end
-    Add("option bagButton=" .. tostring(A.db.bagButton) .. ", button made=" .. tostring(bagButton ~= nil))
-    for _, name in ipairs(BAGS) do
-        local bag = _G[name]
-        Add(name .. ": " .. (bag and ("shown=" .. tostring(bag:IsShown()) .. " strata=" .. bag:GetFrameStrata()
-            .. " level=" .. bag:GetFrameLevel() .. " title=" .. tostring(bag.TitleContainer ~= nil)) or "missing"))
-    end
-    if bagButton then
-        local x, y = bagButton:GetCenter()
-        Add(("button: shown=%s visible=%s strata=%s level=%d scale=%.2f center=%s,%s"):format(
-            tostring(bagButton:IsShown()), tostring(bagButton:IsVisible()), bagButton:GetFrameStrata(),
-            bagButton:GetFrameLevel(), bagButton:GetEffectiveScale(), tostring(x and math.floor(x)), tostring(y and math.floor(y))))
-    end
-    return lines
-end
-
-function A.CreateBagButton()
-    if bagButton then return end
-    bagButton = CreateFrame("Button", "GearGlanceBagButton", UIParent)
-    local button = bagButton
-    button:Hide()
+-- One round button, drawn like the usual minimap addon button (LibDBIcon's
+-- pieces and offsets): click opens the window, right-click turns the
+-- markings on or off.
+local function RoundButton(name, parent, anchor, extraLine)
+    local button = CreateFrame("Button", name, parent)
     button:SetSize(31, 31)
-    button:SetScale(BUTTON_SCALE)
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
     local background = button:CreateTexture(nil, "BACKGROUND")
@@ -386,13 +521,74 @@ function A.CreateBagButton()
         end
     end)
     button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+        GameTooltip:SetOwner(self, anchor)
         GameTooltip:SetText("Gear Glance", GOLD[1], GOLD[2], GOLD[3])
         GameTooltip:AddLine("Click: options", 1, 1, 1)
         GameTooltip:AddLine("Right-click: turn " .. (A.db.enabled and "off" or "on"), 1, 1, 1)
+        if extraLine then GameTooltip:AddLine(extraLine, 1, 1, 1) end
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return button
+end
+
+-- Grey while the markings are off.
+local function PaintEnabled(button)
+    button.icon:SetDesaturated(not A.db.enabled)
+    button.icon:SetAlpha(A.db.enabled and 1 or 0.6)
+end
+
+local function BagOwner()
+    for _, name in ipairs(BAGS) do
+        local bag = _G[name]
+        if bag and bag:IsShown() then return bag end
+    end
+end
+
+function A.UpdateBagButton()
+    if not bagButton then return end
+    local owner = A.db.bagButton and BagOwner()
+    if not owner then bagButton:Hide(); return end
+    bagButton:ClearAllPoints()
+    local title = owner.TitleContainer
+    if title then
+        -- Title bar starts right of the portrait; sit at its left end, centred.
+        bagButton:SetPoint("LEFT", title, "LEFT", 1 / BUTTON_SCALE, 0)
+    else
+        bagButton:SetPoint("TOPLEFT", owner, "TOPLEFT", 58 / BUTTON_SCALE, 0)
+    end
+    -- Since build 70338 a frame's strata can be a secret value.
+    local strata = owner:GetFrameStrata()
+    if issecretvalue and issecretvalue(strata) then strata = nil end
+    bagButton:SetFrameStrata(strata and STRATA_ABOVE[strata] or "HIGH")
+    PaintEnabled(bagButton)
+    bagButton:Show()
+end
+
+-- /gg debug: where the button is, for when it can't be seen.
+function A.DebugBagButton()
+    local lines = {}
+    local function Add(text) lines[#lines + 1] = text end
+    Add("option bagButton=" .. tostring(A.db.bagButton) .. ", button made=" .. tostring(bagButton ~= nil))
+    for _, name in ipairs(BAGS) do
+        local bag = _G[name]
+        Add(name .. ": " .. (bag and ("shown=" .. tostring(bag:IsShown()) .. " strata=" .. bag:GetFrameStrata()
+            .. " level=" .. bag:GetFrameLevel() .. " title=" .. tostring(bag.TitleContainer ~= nil)) or "missing"))
+    end
+    if bagButton then
+        local x, y = bagButton:GetCenter()
+        Add(("button: shown=%s visible=%s strata=%s level=%d scale=%.2f center=%s,%s"):format(
+            tostring(bagButton:IsShown()), tostring(bagButton:IsVisible()), bagButton:GetFrameStrata(),
+            bagButton:GetFrameLevel(), bagButton:GetEffectiveScale(), tostring(x and math.floor(x)), tostring(y and math.floor(y))))
+    end
+    return lines
+end
+
+function A.CreateBagButton()
+    if bagButton then return end
+    bagButton = RoundButton("GearGlanceBagButton", UIParent, "ANCHOR_TOPLEFT")
+    bagButton:Hide()
+    bagButton:SetScale(BUTTON_SCALE)
     for _, name in ipairs(BAGS) do
         local bag = _G[name]
         if bag then
@@ -401,4 +597,46 @@ function A.CreateBagButton()
         end
     end
     A.UpdateBagButton()
+end
+
+-- Minimap button ------------------------------------------------------------------------
+-- On the minimap's edge; drag it round. Its angle is saved.
+
+local minimapButton
+
+local function PlaceMinimapButton()
+    local angle = math.rad(A.db.minimapAngle or A.defaults.minimapAngle)
+    local radius = (Minimap:GetWidth() or 140) / 2 + 10
+    minimapButton:ClearAllPoints()
+    minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+-- Angle (degrees, 0 = east) of a cursor position round the minimap's center.
+function A.MinimapAngle(x, y)
+    local mx, my = Minimap:GetCenter()
+    local scale = Minimap:GetEffectiveScale()
+    return math.deg(math.atan2(y / scale - my, x / scale - mx)) % 360
+end
+
+function A.UpdateMinimapButton()
+    if not minimapButton then return end
+    minimapButton:SetShown(A.db.minimapButton == true)
+    PaintEnabled(minimapButton)
+end
+
+function A.CreateMinimapButton()
+    if minimapButton or not Minimap then return end
+    minimapButton = RoundButton("GearGlanceMinimapButton", Minimap, "ANCHOR_LEFT", "Drag: move")
+    minimapButton:SetFrameStrata("MEDIUM")
+    minimapButton:SetFrameLevel(8)
+    minimapButton:RegisterForDrag("LeftButton")
+    minimapButton:SetScript("OnDragStart", function(self)
+        self:SetScript("OnUpdate", function()
+            A.db.minimapAngle = A.MinimapAngle(GetCursorPosition())
+            PlaceMinimapButton()
+        end)
+    end)
+    minimapButton:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+    PlaceMinimapButton()
+    A.UpdateMinimapButton()
 end

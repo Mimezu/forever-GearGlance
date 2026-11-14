@@ -213,6 +213,36 @@ NUM_CONTAINER_FRAMES = 1
 
 BankPanelItemButtonMixin = { Refresh = function() end }
 
+-- Minimap, key bindings and the AddOns settings list ----------------------------------------
+Minimap = Region("Frame")
+Minimap.GetWidth = function() return 140 end
+Minimap.GetCenter = function() return 500, 400 end
+Minimap.GetEffectiveScale = function() return 1 end
+local cursor = { 0, 0 }
+function GetCursorPosition() return cursor[1], cursor[2] end
+local bindings, savedBindings = {}, 0 -- key -> action
+function GetBindingKey(action)
+    local found = {}
+    for key, a in pairs(bindings) do if a == action then found[#found + 1] = key end end
+    table.sort(found)
+    return unpack(found)
+end
+function GetBindingAction(key) return bindings[key] or "" end
+function GetBindingText(key) return key end
+function SetBinding(key, action) bindings[key] = action end
+function SaveBindings() savedBindings = savedBindings + 1 end
+function GetCurrentBindingSet() return 1 end
+local inCombat = false
+function InCombatLockdown() return inCombat end
+BINDING_NAME_TOGGLEBACKPACK = "Open Backpack"
+local settingsCategories = {}
+Settings = {
+    RegisterCanvasLayoutCategory = function(panel, name) return { panel = panel, name = name } end,
+    RegisterAddOnCategory = function(category) settingsCategories[#settingsCategories + 1] = category end,
+}
+SettingsPanel = Region("Frame")
+function HideUIPanel(f) f:Hide() end
+
 -- Load ------------------------------------------------------------------------------------------
 local ns = {}
 for _, file in ipairs({ "Core.lua", "Skin.lua", "Options.lua" }) do
@@ -512,6 +542,72 @@ check(not GearGlanceBagButton:IsShown(), "button option hides the button")
 combined:Hide()
 ns.SetOption("bagButton", true)
 check(not GearGlanceBagButton:IsShown(), "button stays hidden with the bags closed")
+
+-- Minimap button: shown by default, opens the window, hides from the option, drags round.
+local mm = GearGlanceMinimapButton
+check(mm and mm:IsShown(), "minimap button shown by default")
+check(mm.points[#mm.points][2] == Minimap, "minimap button on the minimap")
+mm.scripts.OnClick(mm, "LeftButton")
+check(GearGlanceOptions:IsShown(), "minimap click opens the window")
+mm.scripts.OnClick(mm, "LeftButton")
+check(not GearGlanceOptions:IsShown(), "and closes it")
+ns.SetOption("minimapButton", false)
+check(not mm:IsShown() and GearGlanceDB.minimapButton == false, "minimap option hides it, saved")
+ns.SetOption("minimapButton", true)
+check(mm:IsShown(), "and shows it")
+cursor[1], cursor[2] = 500, 480 -- straight above the minimap's center
+mm.scripts.OnDragStart(mm)
+mm.scripts.OnUpdate(mm)
+mm.scripts.OnDragStop(mm)
+check(math.abs(GearGlanceDB.minimapAngle - 90) < 0.001 and mm.scripts.OnUpdate == nil, "drag saves the angle")
+local p = mm.points[#mm.points]
+check(math.abs(p[4]) < 0.001 and math.abs(p[5] - 80) < 0.001, "placed on the edge at that angle")
+
+-- Settings page in Esc > Options > AddOns.
+check(#settingsCategories == 1 and settingsCategories[1].name == "Gear Glance", "AddOns settings page registered")
+SettingsPanel:Show()
+local openButton
+for _, c in ipairs(created) do
+    if c.parent == ns.settingsPanel and c.kind == "Button" and c.frame.text == "Open" then openButton = c.frame end
+end
+openButton.scripts.OnClick(openButton)
+check(GearGlanceOptions:IsShown() and not SettingsPanel:IsShown(), "Open closes Settings, opens the window")
+GearGlanceOptions:Hide()
+
+-- Key setters: one in the window, one on the settings page.
+local setters = {}
+for _, c in ipairs(created) do
+    if c.kind == "Button" and c.frame.action == "GEARGLANCE_TOGGLE" then setters[#setters + 1] = c.frame end
+end
+check(#setters == 2, "a key setter in the window and on the settings page")
+local setter, other = setters[1], setters[2]
+check(setter.text.text == "Not set", "no key yet")
+bindings["SHIFT-B"] = "TOGGLEBACKPACK"
+setter.scripts.OnClick(setter, "LeftButton")
+check(setter.text.text == "Press a key", "click listens")
+setter.scripts.OnKeyDown(setter, "LSHIFT")
+check(setter.text.text == "Press a key", "a modifier alone waits")
+keys.shift = true
+setter.scripts.OnKeyDown(setter, "B")
+keys.shift = false
+check(bindings["SHIFT-B"] == "GEARGLANCE_TOGGLE" and savedBindings == 1, "Shift-B bound and saved")
+check(printed[#printed]:find("no longer: Open Backpack", 1, true), "says what the key did before")
+check(setter.text.text == "SHIFT-B" and other.text.text == "SHIFT-B", "both keycaps show the key")
+setter.scripts.OnClick(setter, "LeftButton")
+setter.scripts.OnKeyDown(setter, "ESCAPE")
+check(bindings["SHIFT-B"] == "GEARGLANCE_TOGGLE" and setter.text.text == "SHIFT-B", "Esc cancels")
+other.scripts.OnClick(other, "LeftButton")
+other.scripts.OnKeyDown(other, "ENTER")
+check(other.text.text == "Press a key" and not bindings.ENTER, "Enter refused, still listening")
+other.scripts.OnKeyDown(other, "F7")
+check(bindings.F7 == "GEARGLANCE_TOGGLE" and bindings["SHIFT-B"] == nil, "new key replaces the old one")
+inCombat = true
+setter.scripts.OnClick(setter, "LeftButton")
+check(setter.text.text == "F7", "no listening in combat")
+inCombat = false
+setter.scripts.OnClick(setter, "RightButton")
+check(GetBindingKey("GEARGLANCE_TOGGLE") == nil and setter.text.text == "Not set", "right-click clears")
+check(BINDING_NAME_GEARGLANCE_TOGGLE and BINDING_HEADER_GEARGLANCE, "binding names set")
 
 -- Nothing is ever created as a child of a Blizzard item button (gamepad taint rule).
 for _, c in ipairs(created) do
