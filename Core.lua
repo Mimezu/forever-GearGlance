@@ -241,30 +241,34 @@ end
 A.ScanCheapest = ScanCheapest
 
 -- Sale marks -----------------------------------------------------------------------------
--- Alt-click a bag item to mark it for sale; again to unmark. Marks are per
--- character and cover every copy of that item (item ID plus random suffix,
--- so "of the Bear" and "of the Eagle" stay apart). At a vendor the marked
--- items are sold, and a mark is dropped once its items are gone.
+-- Alt-click a bag item to mark it for sale; again to unmark. A mark is that
+-- one item (or stack), not every copy: it is keyed by the item's GUID, which
+-- stays with it when it moves. Without a GUID the key is its bag slot and
+-- link, so such a mark is lost if the item moves. At a vendor the marked items
+-- are sold, and their marks dropped. Marks are per character.
 
-local function SaleKey(link)
-    local fields = link and link:match("item:([%-%d:]+)")
-    if not fields then return end
-    local id, suffix = fields:match("^(%d+):[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:([%-%d]*)")
-    if not id then id = fields:match("^(%d+)") end
-    if not id then return end
-    if suffix and suffix ~= "" and suffix ~= "0" then return id .. ":" .. suffix end
-    return id
+local function SaleKey(bag, slot, link)
+    if not link then return end
+    if C_Item.GetItemGUID and ItemLocation then
+        local ok, guid = pcall(C_Item.GetItemGUID, ItemLocation:CreateFromBagAndSlot(bag, slot))
+        if ok and not (issecretvalue and issecretvalue(guid)) and type(guid) == "string" and guid ~= "" then
+            return guid
+        end
+    end
+    return bag .. ":" .. slot .. ":" .. link
 end
 A.SaleKey = SaleKey
 
 local function Marks()
     if type(GearGlanceCharDB) ~= "table" then GearGlanceCharDB = {} end
-    if type(GearGlanceCharDB.sell) ~= "table" then GearGlanceCharDB.sell = {} end
-    return GearGlanceCharDB.sell
+    -- 2.2.x marked every copy of an item (GearGlanceCharDB.sell); those are dropped.
+    GearGlanceCharDB.sell = nil
+    if type(GearGlanceCharDB.sellItems) ~= "table" then GearGlanceCharDB.sellItems = {} end
+    return GearGlanceCharDB.sellItems
 end
 
-local function IsMarked(link)
-    local key = SaleKey(link)
+local function IsMarked(bag, slot, link)
+    local key = SaleKey(bag, slot, link)
     return key ~= nil and Marks()[key] == true
 end
 
@@ -283,7 +287,7 @@ local function OnBagClick(button, mouse)
     if CursorHasItem and CursorHasItem() then return end
     local bag, slot = BagButtonSlot(button)
     local info = bag and C_Container.GetContainerItemInfo(bag, slot)
-    local key = info and SaleKey(info.hyperlink)
+    local key = info and SaleKey(bag, slot, info.hyperlink)
     if not key then return end
     local marks = Marks()
     if marks[key] then
@@ -325,7 +329,7 @@ local function FinishSale()
         for bag = 0, (NUM_BAG_SLOTS or 4) do
             for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
                 local info = C_Container.GetContainerItemInfo(bag, slot)
-                local key = info and SaleKey(info.hyperlink)
+                local key = info and SaleKey(bag, slot, info.hyperlink)
                 if key then left[key] = true end
             end
         end
@@ -347,7 +351,7 @@ local function SellNext()
     for bag = 0, (NUM_BAG_SLOTS or 4) do
         for slot = 1, (C_Container.GetContainerNumSlots(bag) or 0) do
             local info = C_Container.GetContainerItemInfo(bag, slot)
-            local key = info and not info.isLocked and not info.hasNoValue and SaleKey(info.hyperlink)
+            local key = info and not info.isLocked and not info.hasNoValue and SaleKey(bag, slot, info.hyperlink)
             local spot = key and (bag .. ":" .. slot .. ":" .. info.hyperlink)
             -- One try per slot: an item the vendor refuses is not retried forever.
             if key and Marks()[key] and not tried[spot] then
@@ -537,7 +541,7 @@ local function Update(button)
     end
     local junk = button.JunkIcon and button.JunkIcon:IsShown() or false
     local cheap = bag == cheapBag and slot == cheapSlot and not button.GetBankTabID
-    local sell = not button.GetBankTabID and IsMarked(link)
+    local sell = not button.GetBankTabID and IsMarked(bag, slot, link)
     local key = link .. (info.isBound and "|b|" or "|u|") .. (junk and "j|" or "") .. (cheap and "c|" or "")
         .. (sell and "s|" or "") .. bag .. ":" .. slot
     if overlay and overlay.key == key and overlay.rev == revision then return end

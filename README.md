@@ -7,7 +7,7 @@ A small Forever version of the retail Gear Glance. It marks your bag and bank it
 - **BoE / BoA / WuE** in the bottom-left corner.
 - **Gold glow** on items you can open (lockboxes, clams, bags of loot).
 - **Junk coin** and a pulsing border on the cheapest item (vendor price x stack) when your bags are full. Profession tools are skipped.
-- **Sell marks**: alt-click a bag item to mark it (again to unmark). Marked items sell at the next vendor (hold Shift to skip).
+- **Sell marks**: alt-click a bag item to mark just that item (again to unmark). Marked items sell at the next vendor (hold Shift to skip).
   Only the last 12 sales can be bought back.
 
 ## Use

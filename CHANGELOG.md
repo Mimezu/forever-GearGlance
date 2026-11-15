@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.3
+
+- Alt-click marks only the item (or stack) you click, not every copy. The mark follows the item when it moves.
+  Marks from 2.2.x, which covered every copy, are cleared once.
+
 ## 2.3.2
 
 - Fix for 2.3.1: the backpack button was hidden under the bag's border. It now sits one level above the bag's highest child frame (one strata above if levels can't be read). `/gg debug` shows the offset.

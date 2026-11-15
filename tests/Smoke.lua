@@ -140,6 +140,14 @@ C_Item = {
         return it and not notCached[link] and it.level or nil
     end,
     GetItemQualityColor = function(q) return q / 10, q / 10, q / 10 end,
+    -- One GUID per item (or stack), kept when the item moves to another slot.
+    GetItemGUID = function(location)
+        local slot = bags[location.bag] and bags[location.bag][location.slot]
+        if not slot then return nil end
+        guids = (guids or 0) + 1
+        slot.guid = slot.guid or ("Item-" .. guids)
+        return slot.guid
+    end,
     IsBoundToAccountUntilEquip = function(location)
         local slot = bags[location.bag] and bags[location.bag][location.slot]
         return slot and slot.wue == true
@@ -455,6 +463,7 @@ local function altClick(slot, mouse)
     flush()
 end
 local function marked(slot) return overlay(slot).sell.shown end
+local function markCount() local n = 0; for _ in pairs(GearGlanceCharDB.sellItems or {}) do n = n + 1 end; return n end
 local linen = Item("2589", { quality = 1, level = 5, price = 13 })
 local bear = Item("4000:0:0:0:0:0:-12", { quality = 2, level = 20, price = 500, equipLoc = "INVTYPE_WAIST", classID = 4, subClassID = 1 })
 local eagle = Item("4000:0:0:0:0:0:-17", { quality = 2, level = 20, price = 500, equipLoc = "INVTYPE_WAIST", classID = 4, subClassID = 1 })
@@ -474,17 +483,28 @@ flush()
 check(not marked(1), "plain click marks nothing")
 altClick(1, "RightButton")
 check(not marked(1), "alt-right-click marks nothing")
+GearGlanceCharDB.sell = { ["2589"] = true } -- 2.2.x marked every copy
 altClick(1)
-check(marked(1) and marked(2) and overlay(1).sellWash.shown, "alt-click marks every stack of that item")
+check(marked(1) and not marked(2) and overlay(1).sellWash.shown, "alt-click marks only the clicked stack")
+check(GearGlanceCharDB.sell == nil, "old every-copy marks dropped")
+bags[0][7], bags[0][1] = bags[0][1], nil
+combined:UpdateItems()
+flush()
+check(marked(7) and not marked(1), "a mark moves with its item")
+bags[0][1], bags[0][7] = bags[0][7], nil
+combined:UpdateItems()
+flush()
+altClick(2)
+check(marked(1) and marked(2), "the other stack marked on its own click")
 altClick(3)
-check(marked(3) and not marked(4), "random suffixes marked apart")
+check(marked(3) and not marked(4), "one item, not its look-alike")
 check(not overlay(3).arrow.shown, "no upgrade arrow on an item marked for sale")
 altClick(5)
 check(not marked(5) and printed[#printed]:find("No vendor price"), "unsellable items refuse a mark")
 altClick(6)
 altClick(6)
 check(not marked(6), "alt-click again unmarks")
-check(GearGlanceCharDB.sell["2589"] and GearGlanceCharDB.sell["4000:-12"], "marks saved per character")
+check(markCount() == 3, "marks saved per character, one per item")
 SlashCmdList.GEARGLANCE("off")
 flush()
 check(marked(1) and not overlay(6).level.shown, "marks stay visible with the markings off")
@@ -504,12 +524,12 @@ flush()
 check(#sold == 2 and not bags[0][1] and not bags[0][2], "both linen stacks sold")
 check(bags[0][3] and bags[0][4] and bags[0][6], "refused, unmarked and other items kept")
 check(printed[#printed]:find("Sold 2 items: 104c", 1, true), "summary counts only what sold")
-check(GearGlanceCharDB.sell["2589"] == nil, "mark dropped once the items are gone")
-check(GearGlanceCharDB.sell["4000:-12"] == true and marked(3), "refused item stays marked")
+check(markCount() == 1, "marks of sold items dropped")
+check(marked(3), "refused item stays marked")
 fire("MERCHANT_CLOSED")
 MerchantFrame.shown = false
 refused[bear] = nil
-GearGlanceCharDB.sell = {}
+GearGlanceCharDB.sellItems = {}
 for slot = 1, 8 do bags[0][slot] = nil end
 combined:UpdateItems()
 flush()
