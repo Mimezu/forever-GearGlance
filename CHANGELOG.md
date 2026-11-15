@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.4
+
+- Fix: the backpack button was invisible in 2.3.1-2.3.3. This client raises windows by draw order, not frame level, so the button is now part of the bag (created at login, then attached to the open bag): above the bag's art, under windows covering the bag.
+
 ## 2.3.3
 
 - Alt-click marks only the item (or stack) you click, not every copy. The mark follows the item when it moves.

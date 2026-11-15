@@ -468,17 +468,18 @@ end
 -- Bag button ----------------------------------------------------------------------------
 -- A small round button in the bag's title bar, next to the portrait, drawn
 -- like a minimap addon button. It sits on the combined bag, or on the
--- backpack when bags are separate. It is parented to UIParent and only
--- anchored to the bag, so nothing is created inside Blizzard's
--- (gamepad-navigated) bag frames.
+-- backpack when bags are separate.
+--
+-- Drawn as part of the bag: this client raises a clicked window by draw
+-- order, not frame level (the bag stays at level 1), so a separate frame
+-- ends up either buried under the bag or floating over windows covering it.
+-- The button is created at login under UIParent, with the bags closed (the
+-- gamepad navigation hooks CreateFrame, not SetParent), then re-parented
+-- to the open bag, one level above the bag's highest child frame (border,
+-- portrait, title). If levels can't be read (secret values), it falls back
+-- to one strata above the bag.
 
 local BUTTON_SCALE = 0.7          -- 31px minimap button -> about 22px, the title bar's height
--- The bags are toplevel frames: opening or clicking one raises it above
--- everything else in its strata. The button shares the bag's strata (a
--- strata above floated it over windows covering the bag) and sits one level
--- above the bag's highest child frame (border, portrait, title, slots),
--- following the bag each frame while shown. If levels can't be read (secret
--- values), it falls back to one strata above the bag.
 local STRATA_ABOVE = { BACKGROUND = "LOW", LOW = "MEDIUM", MEDIUM = "HIGH", HIGH = "DIALOG",
     DIALOG = "FULLSCREEN", FULLSCREEN = "FULLSCREEN_DIALOG", FULLSCREEN_DIALOG = "TOOLTIP" }
 local BAGS = { "ContainerFrameCombinedBags", "ContainerFrame1" } -- combined, or the backpack
@@ -550,17 +551,20 @@ end
 
 local function Secret(value) return issecretvalue and issecretvalue(value) end
 
--- How far the bag's highest child frame sits above the bag itself; nil when
--- a level is secret.
+-- How far the bag's highest child frame (not the button) sits above the bag
+-- itself; nil when a level is secret.
 local function TopChildOffset(bag)
     local base = bag:GetFrameLevel()
     if not base or Secret(base) then return nil end
     local top = base
     local function Scan(...)
         for i = 1, select("#", ...) do
-            local level = select(i, ...):GetFrameLevel()
-            if Secret(level) then return false end
-            if level and level > top then top = level end
+            local child = select(i, ...)
+            if child ~= bagButton then
+                local level = child:GetFrameLevel()
+                if Secret(level) then return false end
+                if level and level > top then top = level end
+            end
         end
         return true
     end
@@ -583,6 +587,7 @@ function A.UpdateBagButton()
     local owner = A.db.bagButton and BagOwner()
     bagButton.owner = owner
     if not owner then bagButton:Hide(); return end
+    if bagButton:GetParent() ~= owner then bagButton:SetParent(owner) end
     bagButton:ClearAllPoints()
     local title = owner.TitleContainer
     if title then

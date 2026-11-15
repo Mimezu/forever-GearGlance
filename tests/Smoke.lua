@@ -58,6 +58,8 @@ local function Region(kind)
         GetFontString = function(self) rawset(self, "fs", rawget(self, "fs") or Region("FontString")); return rawget(self, "fs") end,
         GetFrameLevel = function(self) return rawget(self, "level") or 5 end,
         SetFrameLevel = function(self, v) self.level = v end,
+        SetParent = function(self, p) self.parent = p end,
+        GetParent = function(self) return rawget(self, "parent") end,
         GetFrameStrata = function(self) return rawget(self, "strata") or "MEDIUM" end,
         SetFrameStrata = function(self, v) self.strata = v end,
         GetCenter = function() return 100, 200 end,
@@ -218,7 +220,7 @@ combined.TitleContainer = Region("Frame")
 combined.TitleContainer.level = 6
 local border = Region("Frame") -- NineSlice, drawn above the title
 border.level = 12
-combined.GetChildren = function() return combined.TitleContainer, border end
+combined.GetChildren = function() return combined.TitleContainer, border, GearGlanceBagButton end
 ContainerFrameCombinedBags = combined
 ContainerFrame1 = Region("Frame")
 ContainerFrame1.shown = false
@@ -302,6 +304,13 @@ combined.level = 40 -- the bag raised over another window
 GearGlanceBagButton.scripts.OnUpdate(GearGlanceBagButton)
 check(GearGlanceBagButton:GetFrameLevel() == 48, "bag button follows the raised bag")
 combined.level = nil
+ns.UpdateBagButton()
+ns.UpdateBagButton()
+check(GearGlanceBagButton:GetFrameLevel() == 13, "the button's own level is not counted as the bag's top child")
+check(GearGlanceBagButton:GetParent() == combined, "bag button drawn as part of the open bag")
+for _, c in ipairs(created) do
+    if c.frame == GearGlanceBagButton then check(c.parent == UIParent, "bag button created under UIParent, not inside the bag") end
+end
 SlashCmdList.GEARGLANCE("debug")
 check(#printed >= 3 and printed[#printed]:find("button: shown=true"), "/gg debug reports the button")
 check(GearGlanceBagButton.points[1][1] == "LEFT" and GearGlanceBagButton.points[1][2] == combined.TitleContainer,
