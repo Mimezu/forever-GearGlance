@@ -1,5 +1,5 @@
 -- Run from the addon folder: lua5.1 tests/NavLog.lua
--- The gamepad navigation recorder: logs moves, flags off-grid ones and lost
+-- The gamepad navigation recorder in Core.lua: logs moves, flags off-grid ones and lost
 -- presses, and never writes to Blizzard's navigation.
 local checks = 0
 local function check(v, msg) checks = checks + 1; assert(v, msg) end
@@ -11,10 +11,13 @@ local printed = {}
 function print(s) printed[#printed + 1] = s end
 InputUtil = { IsGamepadUIEnabled = function() return true end }
 
+-- Core.lua makes a few frames at load; only the recorder's OnUpdate matters here.
 local update
 function CreateFrame()
-    return { SetScript = function(_, name, fn) if name == "OnUpdate" then update = fn end end }
+    return setmetatable({ SetScript = function(_, name, fn) if name == "OnUpdate" then update = fn end end },
+        { __index = function() return function() end end })
 end
+SlashCmdList = {}
 
 -- A 3 x 2 bag: row 1 at y=100, row 2 at y=60; columns at x=10, 50, 90.
 local function Slot(bag, slot, x, y)
@@ -53,7 +56,7 @@ local RIGHT, DOWN = { x = 1, y = 0 }, { x = 0, y = -1 }
 
 GearGlanceDB = {}
 local ns = {}
-assert(loadfile("NavLog.lua"))("GearGlance", ns)
+assert(loadfile("Core.lua"))("GearGlance", ns)
 local function frame() now = now + 0.016; update() end
 
 frame()

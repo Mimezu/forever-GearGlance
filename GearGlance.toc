@@ -12,4 +12,3 @@
 Core.lua
 Skin.lua
 Options.lua
-NavLog.lua
