@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.5
+
+- Gamepad bag navigation recorder (diagnostics, read-only): `/gg nav` shows how the d-pad cursor moved in the
+  combined bag, the moves that left the grid, and presses that moved nothing. `/gg nav clear` starts over.
+  It only reads Blizzard's navigation state, so it cannot taint gamepad item use.
+
 ## 2.3.4
 
 - Fix: the backpack button was invisible in 2.3.1-2.3.3. This client raises windows by draw order, not frame level, so the button is now part of the bag (created at login, then attached to the open bag): above the bag's art, under windows covering the bag.

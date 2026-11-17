@@ -724,6 +724,8 @@ SlashCmdList.GEARGLANCE = function(msg)
         for _, line in ipairs(A.DebugBagButton and A.DebugBagButton() or {}) do
             print("|cffffd100Gear Glance|r " .. line)
         end
+    elseif msg == "nav" or msg == "nav clear" then
+        if A.NavReport then A.NavReport(msg == "nav clear") end
     else
         GearGlance_ToggleOptions()
     end
