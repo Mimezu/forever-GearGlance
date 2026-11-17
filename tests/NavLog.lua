@@ -24,6 +24,7 @@ local function Slot(bag, slot, x, y)
     return {
         GetBagID = function() return bag end, GetID = function() return slot end,
         GetCenter = function() return x, y end, GetWidth = function() return 37 end,
+        GetScaledRect = function() return x - 18, y - 18, 37, 37 end,
         IsVisible = function() return true end, IsForbidden = function() return false end,
     }
 end
@@ -33,10 +34,12 @@ local s = {
 }
 local search = {
     GetName = function() return "BagSearchBox" end, IsForbidden = function() return false end,
-    GetParent = function() return nil end,
+    GetParent = function() return nil end, IsVisible = function() return true end,
+    GetScaledRect = function() return 0, 120, 100, 20 end,
 }
 ContainerFrameCombinedBags = {
     IsVisible = function() return true end,
+    GetScaledRect = function() return 0, 0, 200, 150 end,
     EnumerateValidItems = function()
         local i = 0
         return function() i = i + 1; if s[i] then return i, s[i] end end
@@ -62,7 +65,8 @@ local function frame() now = now + 0.016; update() end
 frame()
 local log = GearGlanceDB.navLog
 check(log[1].kind == "open" and log[1].slots == 6 and log[1].listed == 6 and log[1].missing == 1, "open: one slot missing from Blizzard's list")
-check(log[1].others:find("BagSearchBox", 1, true), "open: lists non-slot targets")
+check(#log[1].others == 1 and log[1].others[1] == "BagSearchBox @0,10 100x20", "open: non-slot targets with where they are")
+check(log[1].slot1 == "-8,31 37x37", "open: where the first slot is")
 
 -- RIGHT to the grid neighbor: fine.
 navState.currentDirections = { RIGHT }; frame()
@@ -70,6 +74,7 @@ navState.currentButton = s[2]; frame()
 navState.currentDirections = {}; frame()
 check(log[2].kind == "move" and log[2].ok and log[2].dir == "RIGHT", "a grid move is ok")
 check(log[2].from:find("r1 c1", 1, true) and log[2].to:find("r1 c2", 1, true), "rows and columns counted from the top left")
+check(log[2].fromAt == "-8,31 37x37" and log[2].toAt == "32,31 37x37", "moves record where both buttons are")
 
 -- RIGHT again, but it jumps to r2 c3 because r1 c3 is not listed.
 navState.currentDirections = { RIGHT }; frame()

@@ -747,7 +747,7 @@ end
 -- /gg nav: summary in chat. /gg nav clear: start over.
 -- The log is kept in GearGlanceDB.navLog (last MAX entries) across /reload.
 do
-    local MAX = 80
+    local MAX = 150
     local DIRS = { RIGHT = { 1, 0 }, LEFT = { -1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
 
     local function Log()
@@ -877,20 +877,38 @@ do
         local current = nav.currentButton
         local direction = DirectionName(nav.currentDirections)
 
+        -- Where a button is, from the bag's top left, in screen pixels:
+        -- "x,y wxh", and "+anchor" when its cursor point is set elsewhere.
+        local function Where(button)
+            if type(button) ~= "table" or not button.GetScaledRect then return nil end
+            local ok, l, b, w, h = pcall(button.GetScaledRect, button)
+            local okBag, bl, bb, bw, bh = pcall(bag.GetScaledRect, bag)
+            if not (ok and l and okBag and bl) then return "no rect" end
+            local text = ("%d,%d %dx%d"):format(l - bl, (bb + bh) - (b + h), w, h)
+            if button.smartNavigationCustomCursorAnchor then text = text .. " +anchor" end
+            return text
+        end
+
         -- Once per bag opening: what besides item slots can the cursor go to?
         if not openLogged then
             local buttons, info = Candidates()
             if buttons and info and info.frame == bag then
                 openLogged = true
-                local slots, inList, others = Slots(bag), {}, {}
+                local slots, inList, isSlot, others = Slots(bag), {}, {}, {}
+                for _, s in ipairs(slots) do isSlot[s.button] = true end
                 for _, b in ipairs(buttons) do
                     inList[b] = true
-                    if not (b.GetBagID and b.GetID) then others[#others + 1] = Describe(b) end
+                    -- Everything that is not a plain slot, visible ones with where they are.
+                    if not isSlot[b] and #others < 40 then
+                        local okVisible, visible = pcall(b.IsVisible, b)
+                        if okVisible and visible then others[#others + 1] = Describe(b) .. " @" .. tostring(Where(b)) end
+                    end
                 end
                 local missing = 0
                 for _, s in ipairs(slots) do if not inList[s.button] then missing = missing + 1 end end
+                local first = slots[1] and Where(slots[1].button)
                 Add({ kind = "open", slots = #slots, listed = #buttons, missing = missing,
-                    others = table.concat(others, "; ", 1, math.min(#others, 12)) })
+                    slot1 = first, others = others })
             end
         end
 
@@ -906,7 +924,8 @@ do
         if current ~= lastButton then
             local slots = Slots(bag)
             local dir = direction or lastDirection
-            local entry = { kind = "move", dir = dir or "?", from = Describe(lastButton, slots), to = Describe(current, slots) }
+            local entry = { kind = "move", dir = dir or "?", from = Describe(lastButton, slots), to = Describe(current, slots),
+                fromAt = Where(lastButton), toAt = Where(current) }
             local vector = dir and DIRS[dir]
             if vector and lastButton then
                 local expected = GridNeighbor(lastButton, vector, slots)
