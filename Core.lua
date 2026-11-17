@@ -24,6 +24,7 @@ A.defaults = {
     sellMarks = true,
     textSize = 13,
     bagButton = true,
+    gamepadGrid = true,
     minimapButton = true,
     minimapAngle = 200, -- degrees round the minimap, 0 = east
 }
@@ -625,6 +626,112 @@ local function HookBank()
     hooksecurefunc(BankPanelItemButtonMixin, "Refresh", A.QueueButton)
 end
 
+-- Gamepad: the combined bag as a plain grid -----------------------------------------------
+-- In the gamepad UI Blizzard adds the gamepad bag buttons (one per bag, with
+-- free-slot counts) as cells of the combined bag's item grid, and the d-pad
+-- cursor goes astray on them. With gamepadGrid on, after Blizzard lays out
+-- the bag, the items are laid out again on the same grid (10 columns, from
+-- the bottom right, the order of the keyboard UI) without those buttons, the
+-- buttons are hidden, and the frame loses the rows they took.
+--
+-- Taint rule: this only moves, shows, hides and sizes frames. It never writes
+-- to SmartNavigation or to Blizzard's tables, which its d-pad code reads (that
+-- would make gamepad item use fail with "action blocked"). The cursor sees
+-- the new layout through frame positions, which carry no taint.
+
+function A.GamepadUI()
+    if not (InputUtil and InputUtil.IsGamepadUIEnabled) then return false end
+    local ok, on = pcall(InputUtil.IsGamepadUIEnabled)
+    return ok and on == true
+end
+
+local GRID_COLUMNS = 10
+local gridHeight -- the height this addon gave the bag; nil once Blizzard sizes it again
+
+local function GridWanted(bag)
+    return A.db and A.db.gamepadGrid and A.GamepadUI() and bag and bag:IsShown()
+        and not (InCombatLockdown and InCombatLockdown())
+end
+
+-- The gamepad bag buttons, for every bag the combined bag can hold.
+local function GamepadBagButtons()
+    local list = {}
+    if not (GamepadBagBar and GamepadBagBar.GetBagButton) then return list end
+    local last = (NUM_TOTAL_BAG_FRAMES or NUM_BAG_SLOTS or 4) + 1
+    for bagID = (KEYRING_CONTAINER and math.min(KEYRING_CONTAINER, 0) or 0), last do
+        local ok, button = pcall(GamepadBagBar.GetBagButton, GamepadBagBar, bagID)
+        if ok and type(button) == "table" then list[#list + 1] = button end
+    end
+    return list
+end
+
+-- Blizzard's own order for the combined bag: highest bag first, highest
+-- slot first, laid from the bottom right (so the backpack starts top left).
+local function SortBagID(item)
+    local bagID = item:GetBagID()
+    if KEYRING_CONTAINER and bagID == KEYRING_CONTAINER then return (NUM_TOTAL_BAG_FRAMES or 5) + 1 end
+    return bagID
+end
+local function SortItems(a, b)
+    local bagA, bagB = SortBagID(a), SortBagID(b)
+    if bagA ~= bagB then return bagA > bagB end
+    return a:GetID() > b:GetID()
+end
+
+local function LayoutGrid(bag)
+    if not GridWanted(bag) then return end
+    local items = {}
+    for first, second in bag:EnumerateValidItems() do
+        local item = type(first) == "table" and first or second
+        if type(item) == "table" and item.GetBagID and item:GetBagID() then items[#items + 1] = item end
+    end
+    if #items == 0 then return end
+    table.sort(items, SortItems)
+    -- Only the ones placed inside the bag (they may sit in a holder frame of it).
+    for _, button in ipairs(GamepadBagButtons()) do
+        local parent, depth = button:GetParent(), 0
+        while parent and parent ~= bag and depth < 5 do parent, depth = parent:GetParent(), depth + 1 end
+        if parent == bag and button:IsShown() then button:Hide() end
+    end
+    -- Items of a bag collapsed earlier (with its gamepad button) come back:
+    -- without the buttons it could not be opened again.
+    for _, item in ipairs(items) do if not item:IsShown() then item:Show() end end
+    local anchorTo = bag.MoneyFrame or bag
+    local spacingX, spacingY = ITEM_SPACING_X or 5, ITEM_SPACING_Y or 5
+    for index, item in ipairs(items) do
+        local cell = index - 1
+        local col, row = cell % GRID_COLUMNS, math.floor(cell / GRID_COLUMNS)
+        item:ClearAllPoints()
+        item:SetPoint("BOTTOMRIGHT", anchorTo, "TOPRIGHT",
+            -col * (item:GetWidth() + spacingX), 4 + row * (item:GetHeight() + spacingY))
+    end
+    -- The rows Blizzard sized the frame for (items it showed plus one cell
+    -- per bag button) against the rows the items alone need.
+    local shown = tonumber(bag.shownSlots) or #items
+    local blizzardRows = math.ceil((shown + (NUM_CONTAINER_FRAMES or 0)) / GRID_COLUMNS)
+    local rows = math.ceil(#items / GRID_COLUMNS)
+    local extra = (rows - blizzardRows) * (items[1]:GetHeight() + spacingY)
+    if extra ~= 0 and gridHeight ~= bag:GetHeight() then
+        local height = bag:GetHeight() + extra
+        bag:SetHeight(height)
+        gridHeight = height
+        if NineSliceUtil and NineSliceUtil.UpdateCornerCropping then pcall(NineSliceUtil.UpdateCornerCropping, bag, height) end
+    end
+end
+A.LayoutGrid = LayoutGrid
+
+local gridHooked = false
+local function HookGamepadGrid()
+    local bag = ContainerFrameCombinedBags
+    if gridHooked or not bag or type(bag.UpdateItemLayout) ~= "function" then return end
+    gridHooked = true
+    hooksecurefunc(bag, "UpdateItemLayout", LayoutGrid)
+    -- A frame size set after the layout would undo the shorter height.
+    if type(bag.UpdateFrameSize) == "function" then
+        hooksecurefunc(bag, "UpdateFrameSize", function(self) gridHeight = nil; LayoutGrid(self) end)
+    end
+end
+
 -- Repaints everything on screen, e.g. after an option change.
 function A.RefreshAll()
     revision = revision + 1
@@ -678,6 +785,7 @@ events:SetScript("OnEvent", function(_, event, arg1, ...)
         if not A.db then InitDB() end
         ResolveRangedSlot()
         HookBags()
+        HookGamepadGrid()
         HookBank()
         if A.CreateBagButton then A.CreateBagButton() end
         if A.CreateMinimapButton then A.CreateMinimapButton() end
@@ -889,6 +997,26 @@ do
             return text
         end
 
+        -- Blizzard's own rules stored on a button: jump overrides per direction,
+        -- a focus group key, a custom cone, an ignore flag. Read only.
+        local function Rules(button)
+            if type(button) ~= "table" then return nil end
+            local parts = {}
+            local data = rawget(button, "smartNavData")
+            local overrides = type(data) == "table" and data.navigationOverrides
+            if type(overrides) == "table" then
+                for key, target in pairs(overrides) do
+                    parts[#parts + 1] = tostring(key) .. ">" .. (type(target) == "function" and "fn"
+                        or type(target) == "table" and Describe(target) or tostring(target))
+                end
+            end
+            if rawget(button, "smartNavigationFocusKey") ~= nil then parts[#parts + 1] = "group " .. tostring(button.smartNavigationFocusKey) end
+            if rawget(button, "smartNavigationDirectionBufferData") then parts[#parts + 1] = "cone" end
+            if rawget(button, "smartNavigationIgnored") or rawget(button, "smartNavigationIgnoredDontPropagate") then parts[#parts + 1] = "ignored" end
+            if #parts == 0 then return nil end
+            return table.concat(parts, ", ")
+        end
+
         -- Once per bag opening: what besides item slots can the cursor go to?
         if not openLogged then
             local buttons, info = Candidates()
@@ -901,14 +1029,39 @@ do
                     -- Everything that is not a plain slot, visible ones with where they are.
                     if not isSlot[b] and #others < 40 then
                         local okVisible, visible = pcall(b.IsVisible, b)
-                        if okVisible and visible then others[#others + 1] = Describe(b) .. " @" .. tostring(Where(b)) end
+                        if okVisible and visible then
+                            local rules = Rules(b)
+                            others[#others + 1] = Describe(b) .. " @" .. tostring(Where(b)) .. (rules and (" [" .. rules .. "]") or "")
+                        end
                     end
                 end
                 local missing = 0
                 for _, s in ipairs(slots) do if not inList[s.button] then missing = missing + 1 end end
                 local first = slots[1] and Where(slots[1].button)
+                -- Slots that carry rules of their own.
+                local ruled = {}
+                for _, s in ipairs(slots) do
+                    local rules = Rules(s.button)
+                    if rules and #ruled < 10 then ruled[#ruled + 1] = Describe(s.button, slots) .. " [" .. rules .. "]" end
+                end
                 Add({ kind = "open", slots = #slots, listed = #buttons, missing = missing,
-                    slot1 = first, others = others })
+                    slot1 = first, others = others, ruledSlots = ruled, grid = (function()
+                        -- Blizzard's grid: one column per distinct x. Columns that hold
+                        -- anything but slots are the ones that send the cursor astray.
+                        local grid = info.grid
+                        if type(grid) ~= "table" then return "no grid" end
+                        local columns, stray = #grid, {}
+                        for index, column in ipairs(grid) do
+                            local odd = false
+                            for _, b in ipairs(column) do if not isSlot[b] then odd = true end end
+                            if odd and #stray < 20 then
+                                local names = {}
+                                for _, b in ipairs(column) do if not isSlot[b] then names[#names + 1] = Describe(b) end end
+                                stray[#stray + 1] = "col " .. index .. " (" .. #column .. "): " .. table.concat(names, ", ")
+                            end
+                        end
+                        return columns .. " columns" .. (#stray > 0 and ("; " .. table.concat(stray, "; ")) or "")
+                    end)() })
             end
         end
 
@@ -925,7 +1078,13 @@ do
             local slots = Slots(bag)
             local dir = direction or lastDirection
             local entry = { kind = "move", dir = dir or "?", from = Describe(lastButton, slots), to = Describe(current, slots),
-                fromAt = Where(lastButton), toAt = Where(current) }
+                fromAt = Where(lastButton), toAt = Where(current), fromRules = Rules(lastButton) }
+            -- Inside a focus group the cursor only sees that group's buttons.
+            local navInfo = nav.activeInfo
+            local groups = navInfo and navInfo.buttonGroups
+            if groups and groups.focusedGroup then
+                entry.group = tostring(navInfo.focusedKey) .. " (" .. #(groups.focusedGroup.buttons or {}) .. ")"
+            end
             local vector = dir and DIRS[dir]
             if vector and lastButton then
                 local expected = GridNeighbor(lastButton, vector, slots)

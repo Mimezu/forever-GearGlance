@@ -584,7 +584,8 @@ end
 
 function A.UpdateBagButton()
     if not bagButton then return end
-    local owner = A.db.bagButton and BagOwner()
+    -- Not in the gamepad UI: inside the bag it is one more d-pad stop that breaks the grid.
+    local owner = A.db.bagButton and not (A.GamepadUI and A.GamepadUI()) and BagOwner()
     bagButton.owner = owner
     if not owner then bagButton:Hide(); return end
     if bagButton:GetParent() ~= owner then bagButton:SetParent(owner) end

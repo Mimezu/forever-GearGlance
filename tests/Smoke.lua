@@ -66,6 +66,9 @@ local function Region(kind)
         GetEffectiveScale = function() return 0.7 end,
         GetPoint = function() return "CENTER", nil, "CENTER", 0, 0 end,
         GetSize = function() return 100, 100 end,
+        GetWidth = function(self) return rawget(self, "w") or 37 end,
+        GetHeight = function(self) return rawget(self, "h") or 37 end,
+        SetHeight = function(self, v) self.h = v end,
         IsEnabled = function() return true end,
     }
     return setmetatable(obj, { __index = function(_, key)
@@ -216,6 +219,9 @@ combined.EnumerateValidItems = function(self)
     return function() i = i + 1; if self.buttons[i] then return i, self.buttons[i] end end
 end
 combined.UpdateItems = function() end
+-- Gamepad UI sizing and layout (Blizzard's own; Gear Glance post-hooks them).
+combined.UpdateFrameSize = function(self) self.h = 300 end
+combined.UpdateItemLayout = function() end
 combined.TitleContainer = Region("Frame")
 combined.TitleContainer.level = 6
 local border = Region("Frame") -- NineSlice, drawn above the title
@@ -539,6 +545,47 @@ fire("MERCHANT_CLOSED")
 MerchantFrame.shown = false
 refused[bear] = nil
 GearGlanceCharDB.sellItems = {}
+for slot = 1, 8 do bags[0][slot] = nil end
+combined:UpdateItems()
+flush()
+
+-- Gamepad UI: the combined bag as a plain grid, without the gamepad bag buttons.
+local holder = Region("Frame"); holder.parent = combined
+local bagButtons = { [0] = Region("Button") }
+bagButtons[0].parent = holder
+GamepadBagBar = { GetBagButton = function(_, id) return bagButtons[id] end }
+combined.MoneyFrame = Region("Frame")
+combined.h, combined.shownSlots = 300, 8
+NUM_CONTAINER_FRAMES = 6
+local gamepad = false
+InputUtil = { IsGamepadUIEnabled = function() return gamepad end }
+for slot = 1, 8 do bags[0][slot] = { link = Item("Grid" .. slot, { quality = 1, level = 1 }) } end
+fire("PLAYER_LOGIN")
+combined:UpdateFrameSize(); combined:UpdateItemLayout()
+check(bagButtons[0].shown and combined.h == 300, "keyboard UI: Blizzard's layout untouched")
+gamepad = true
+combined:UpdateFrameSize(); combined:UpdateItemLayout()
+check(not bagButtons[0].shown, "gamepad UI: bag buttons inside the bag hidden")
+-- 8 items + 6 bag buttons = 2 rows for Blizzard; 8 items = 1 row: one row (37 + 5) less.
+check(combined.h == 258, "frame loses the bag buttons' row")
+combined:UpdateItemLayout()
+check(combined.h == 258, "a second layout does not shrink it again")
+local function pointOf(slot)
+    local p = combined.buttons[slot].points
+    return p[#p]
+end
+-- Highest slot first from the bottom right: slot 8 at the corner, slot 1 seven cells left.
+check(pointOf(8)[1] == "BOTTOMRIGHT" and pointOf(8)[2] == combined.MoneyFrame and pointOf(8)[4] == 0 and pointOf(8)[5] == 4, "slot 8 at the bottom right")
+check(pointOf(1)[4] == -7 * 42 and pointOf(1)[5] == 4, "slot 1 seven cells to the left, same row")
+ns.SetOption("gamepadGrid", false)
+bagButtons[0]:Show()
+combined:UpdateFrameSize(); combined:UpdateItemLayout()
+check(bagButtons[0].shown and combined.h == 300, "option off: Blizzard's gamepad layout")
+ns.SetOption("gamepadGrid", true)
+combined:UpdateFrameSize(); combined:UpdateItemLayout()
+combined:UpdateFrameSize()
+check(combined.h == 258, "Blizzard sizing the frame again gets the short height back")
+gamepad = false; InputUtil = nil; GamepadBagBar = nil
 for slot = 1, 8 do bags[0][slot] = nil end
 combined:UpdateItems()
 flush()

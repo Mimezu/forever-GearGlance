@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0
+
+- Gamepad UI: the combined bag is a plain grid of items, like the keyboard UI. The gamepad bag buttons
+  (one per bag, with free-slot counts) are no longer cells of the grid: they sent the d-pad cursor astray
+  in Blizzard's grid navigation. Items of bags collapsed earlier show again. On by default (`gamepadGrid`).
+- Gamepad UI: no backpack button in the bag's title bar (it was one more d-pad stop).
+- `/gg nav` recorder also notes where each button is, Blizzard's rules on it, and Blizzard's grid columns.
+- Only frames are moved, shown and hidden; nothing is written to Blizzard's navigation (no taint).
+
 ## 2.3.5
 
 - Gamepad bag navigation recorder (diagnostics, read-only): `/gg nav` shows how the d-pad cursor moved in the
