@@ -747,6 +747,33 @@ local function LayoutGrid(bag)
 end
 A.LayoutGrid = LayoutGrid
 
+-- After the loot window closes, the gamepad cursor should be back in the
+-- bag the container was opened from. Blizzard returns focus to the bag only
+-- when the loot event says the loot came from an item; when it does not,
+-- focus goes back to the character and the open bag is left unfocused.
+-- Then the bag is announced again with the focus manager's FrameHidden and
+-- FrameShown (what Blizzard calls when the bag opens): both are open to
+-- addons and run securely out of combat. Nothing happens when Blizzard
+-- already focused the bag or another window has focus.
+local function RefocusBagAfterLoot()
+    local bag = ContainerFrameCombinedBags
+    local manager = GamepadMode and GamepadMode.FrameControlsManager
+    if not (A.db and A.db.gamepadGrid) or not A.GamepadUI() or InCombat() then return end
+    if not (manager and manager.FrameHidden and manager.FrameShown and bag and bag:IsShown()) then return end
+    if manager.isUIFocused and manager.focusedFrame ~= nil then return end
+    pcall(manager.FrameHidden, manager, bag)
+    pcall(manager.FrameShown, manager, bag)
+end
+A.RefocusBagAfterLoot = RefocusBagAfterLoot
+
+local lootHooked = false
+local function HookLoot()
+    if lootHooked or not (LootFrame and LootFrame.HookScript) then return end
+    lootHooked = true
+    -- Next frame: let Blizzard's own focus hand-off finish first.
+    LootFrame:HookScript("OnHide", function() C_Timer.After(0, RefocusBagAfterLoot) end)
+end
+
 local gridHooked = false
 local function HookGamepadGrid()
     local bag = ContainerFrameCombinedBags
@@ -820,6 +847,7 @@ events:SetScript("OnEvent", function(_, event, arg1, ...)
         ResolveRangedSlot()
         HookBags()
         HookGamepadGrid()
+        HookLoot()
         HookBank()
         if A.CreateBagButton then A.CreateBagButton() end
         if A.CreateMinimapButton then A.CreateMinimapButton() end

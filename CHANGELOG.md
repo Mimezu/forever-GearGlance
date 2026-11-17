@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.2
+
+- Gamepad bag: after opening a container (loot window), the cursor comes back to the bag. Blizzard returns focus
+  to the bag only when the loot event marks the loot as coming from an item; otherwise focus went to the character.
+  The bag is announced again with the focus manager's FrameHidden/FrameShown (open to addons, secure out of combat).
+
 ## 2.4.1
 
 - Gamepad bag: right from the first column no longer lands on the tracked currencies; the line under the items

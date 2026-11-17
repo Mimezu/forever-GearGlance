@@ -237,6 +237,14 @@ ContainerFrame1.shown = false
 NUM_CONTAINER_FRAMES = 1
 
 BankPanelItemButtonMixin = { Refresh = function() end }
+LootFrame = Region("Frame")
+-- Blizzard's gamepad focus manager: the two calls open to addons, recorded.
+local focusCalls = {}
+GamepadMode = { FrameControlsManager = {
+    isUIFocused = false,
+    FrameHidden = function(self, f) focusCalls[#focusCalls + 1] = "hidden" end,
+    FrameShown = function(self, f) focusCalls[#focusCalls + 1] = "shown"; self.isUIFocused, self.focusedFrame = true, f end,
+} }
 
 -- Minimap, key bindings and the AddOns settings list ----------------------------------------
 Minimap = Region("Frame")
@@ -601,6 +609,19 @@ ns.SetOption("gamepadGrid", true)
 combined:UpdateFrameSize(); combined:UpdateItemLayout()
 combined:UpdateFrameSize()
 check(combined.h == 130, "Blizzard sizing the frame again gets the item height back")
+-- Loot window closed and focus went back to the character: the bag gets it back.
+local manager = GamepadMode.FrameControlsManager
+manager.isUIFocused, manager.focusedFrame = false, combined
+LootFrame:Show(); LootFrame:Hide(); flush()
+check(focusCalls[1] == "hidden" and focusCalls[2] == "shown" and manager.focusedFrame == combined, "bag focused again after loot")
+focusCalls = {}
+LootFrame:Show(); LootFrame:Hide(); flush()
+check(#focusCalls == 0, "bag already focused (Blizzard did it): nothing")
+manager.isUIFocused, manager.focusedFrame = true, Region("Frame")
+LootFrame:Show(); LootFrame:Hide(); flush()
+check(#focusCalls == 0, "another window has focus: left alone")
+manager.isUIFocused, manager.focusedFrame = false, nil
+
 -- In combat nothing is moved or marked (Blizzard would refuse it).
 local fight = Region("Frame"); fight.top, fight.parent = 5, combined
 combined.GetChildren = function() return tracker, search, fight end
