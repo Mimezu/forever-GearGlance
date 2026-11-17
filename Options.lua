@@ -584,8 +584,7 @@ end
 
 function A.UpdateBagButton()
     if not bagButton then return end
-    -- Not in the gamepad UI: inside the bag it is one more d-pad stop that breaks the grid.
-    local owner = A.db.bagButton and not (A.GamepadUI and A.GamepadUI()) and BagOwner()
+    local owner = A.db.bagButton and BagOwner()
     bagButton.owner = owner
     if not owner then bagButton:Hide(); return end
     if bagButton:GetParent() ~= owner then bagButton:SetParent(owner) end
@@ -636,6 +635,8 @@ function A.CreateBagButton()
     if bagButton then return end
     bagButton = RoundButton("GearGlanceBagButton", UIParent, "ANCHOR_TOPLEFT")
     bagButton:Hide()
+    -- Inside the bag it would be a column of Blizzard's gamepad grid.
+    if A.IgnoreForNavigation then A.IgnoreForNavigation(bagButton) end
     bagButton:SetScale(BUTTON_SCALE)
     bagButton:SetScript("OnUpdate", FollowBagLevel) -- runs only while shown
     for _, name in ipairs(BAGS) do

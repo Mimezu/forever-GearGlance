@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.1
+
+- Gamepad bag: right from the first column no longer lands on the tracked currencies; the line under the items
+  is marked ignored for d-pad navigation (Blizzard's SmartNavigation_MarkFrameIgnored).
+- Gamepad bag: no wrap from the last column to the first (SmartNavigation:SetWrapping off for the bag).
+- Gamepad bag: the top row no longer overlaps the search box (height from Blizzard's own formula).
+- The backpack button shows again in the gamepad UI, marked ignored for navigation.
+- These calls are Blizzard's for addons and run securely out of combat; in combat they are skipped.
+
 ## 2.4.0
 
 - Gamepad UI: the combined bag is a plain grid of items, like the keyboard UI. The gamepad bag buttons

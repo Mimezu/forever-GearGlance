@@ -107,6 +107,10 @@ C_Texture = { GetAtlasInfo = function() return { width = 43, height = 60, leftTe
 NineSliceUtil = { ApplyLayoutByName = function() end }
 C_AddOns = { GetAddOnMetadata = function() return "2.0.0" end }
 Enum = { ItemBind = { OnEquip = 2, ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
+-- Blizzard's addon-facing gamepad navigation calls, recorded.
+local navIgnored, wrapping = {}, {}
+function SmartNavigation_MarkFrameIgnored(frame) navIgnored[frame] = true end
+SmartNavigation = { SetWrapping = function(_, frame, on) wrapping[frame] = on end }
 local printed = {}
 function print(text) printed[#printed + 1] = text end
 
@@ -555,8 +559,16 @@ local bagButtons = { [0] = Region("Button") }
 bagButtons[0].parent = holder
 GamepadBagBar = { GetBagButton = function(_, id) return bagButtons[id] end }
 combined.MoneyFrame = Region("Frame")
-combined.h, combined.shownSlots = 300, 8
-NUM_CONTAINER_FRAMES = 6
+combined.h = 300
+combined.GetPaddingHeight = function() return 63 end
+combined.CalculateExtraHeight = function() return 30 end
+-- Under the items: the tracked-currency line. Above them: the search box.
+local tracker = Region("Frame"); tracker.top, tracker.parent = 10, combined
+local search = Region("EditBox"); search.top, search.parent = 400, combined
+combined.GetChildren = function() return tracker, search end
+for slot = 1, 8 do combined.buttons[slot].GetBottom = function() return 20 end end
+tracker.GetTop = function(self) return self.top end
+search.GetTop = function(self) return self.top end
 local gamepad = false
 InputUtil = { IsGamepadUIEnabled = function() return gamepad end }
 for slot = 1, 8 do bags[0][slot] = { link = Item("Grid" .. slot, { quality = 1, level = 1 }) } end
@@ -566,10 +578,14 @@ check(bagButtons[0].shown and combined.h == 300, "keyboard UI: Blizzard's layout
 gamepad = true
 combined:UpdateFrameSize(); combined:UpdateItemLayout()
 check(not bagButtons[0].shown, "gamepad UI: bag buttons inside the bag hidden")
--- 8 items + 6 bag buttons = 2 rows for Blizzard; 8 items = 1 row: one row (37 + 5) less.
-check(combined.h == 258, "frame loses the bag buttons' row")
+-- Blizzard's formula for 8 items (1 row): 37 + 63 padding + 30 money and search.
+check(combined.h == 130, "frame sized for the item rows alone")
 combined:UpdateItemLayout()
-check(combined.h == 258, "a second layout does not shrink it again")
+check(combined.h == 130, "a second layout keeps that height")
+check(navIgnored[tracker] and not navIgnored[search], "the line under the items is no cursor stop")
+check(navIgnored[GearGlanceBagButton], "our backpack button is no cursor stop")
+combined:SmartNavPanelInfoAdded()
+check(wrapping[combined] == false, "no wrap from the last column to the first")
 local function pointOf(slot)
     local p = combined.buttons[slot].points
     return p[#p]
@@ -584,7 +600,16 @@ check(bagButtons[0].shown and combined.h == 300, "option off: Blizzard's gamepad
 ns.SetOption("gamepadGrid", true)
 combined:UpdateFrameSize(); combined:UpdateItemLayout()
 combined:UpdateFrameSize()
-check(combined.h == 258, "Blizzard sizing the frame again gets the short height back")
+check(combined.h == 130, "Blizzard sizing the frame again gets the item height back")
+-- In combat nothing is moved or marked (Blizzard would refuse it).
+local fight = Region("Frame"); fight.top, fight.parent = 5, combined
+combined.GetChildren = function() return tracker, search, fight end
+local keepCombat = InCombatLockdown
+function InCombatLockdown() return true end
+combined:UpdateFrameSize(); combined:UpdateItemLayout()
+wrapping[combined] = nil; combined:SmartNavPanelInfoAdded()
+check(combined.h == 300 and not navIgnored[fight] and wrapping[combined] == nil, "combat: no layout, no marks, no wrap call")
+InCombatLockdown = keepCombat
 gamepad = false; InputUtil = nil; GamepadBagBar = nil
 for slot = 1, 8 do bags[0][slot] = nil end
 combined:UpdateItems()

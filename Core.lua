@@ -632,12 +632,19 @@ end
 -- cursor goes astray on them. With gamepadGrid on, after Blizzard lays out
 -- the bag, the items are laid out again on the same grid (10 columns, from
 -- the bottom right, the order of the keyboard UI) without those buttons, the
--- buttons are hidden, and the frame loses the rows they took.
+-- buttons are hidden, and the frame is sized for the items alone.
 --
--- Taint rule: this only moves, shows, hides and sizes frames. It never writes
--- to SmartNavigation or to Blizzard's tables, which its d-pad code reads (that
--- would make gamepad item use fail with "action blocked"). The cursor sees
--- the new layout through frame positions, which carry no taint.
+-- Blizzard's bag navigation is a grid: one column per distinct x among the
+-- bag's clickable frames. Anything that is not an item (the tracked-currency
+-- line under the items, our backpack button) is marked ignored, so it is
+-- not a column the cursor lands on; and the bag does not wrap from its last
+-- column to its first.
+--
+-- Taint rule: nothing of ours is written into SmartNavigation's tables. The
+-- two calls into it, SmartNavigation_MarkFrameIgnored and SmartNavigation:
+-- SetWrapping, are the ones Blizzard opened to addons: out of combat they
+-- run securely through its SecureHelper. In combat they are not made (they
+-- would be refused with "Interface action failed").
 
 function A.GamepadUI()
     if not (InputUtil and InputUtil.IsGamepadUIEnabled) then return false end
@@ -646,11 +653,19 @@ function A.GamepadUI()
 end
 
 local GRID_COLUMNS = 10
-local gridHeight -- the height this addon gave the bag; nil once Blizzard sizes it again
+
+local function InCombat() return InCombatLockdown and InCombatLockdown() end
+
+-- Blizzard's supported way to keep a frame (and its children) out of the
+-- gamepad cursor's reach. Once per frame, out of combat only.
+local navIgnored = setmetatable({}, { __mode = "k" })
+function A.IgnoreForNavigation(frame)
+    if not frame or navIgnored[frame] or InCombat() or type(SmartNavigation_MarkFrameIgnored) ~= "function" then return end
+    if pcall(SmartNavigation_MarkFrameIgnored, frame) then navIgnored[frame] = true end
+end
 
 local function GridWanted(bag)
-    return A.db and A.db.gamepadGrid and A.GamepadUI() and bag and bag:IsShown()
-        and not (InCombatLockdown and InCombatLockdown())
+    return A.db and A.db.gamepadGrid and A.GamepadUI() and bag and bag:IsShown() and not InCombat()
 end
 
 -- The gamepad bag buttons, for every bag the combined bag can hold.
@@ -705,17 +720,29 @@ local function LayoutGrid(bag)
         item:SetPoint("BOTTOMRIGHT", anchorTo, "TOPRIGHT",
             -col * (item:GetWidth() + spacingX), 4 + row * (item:GetHeight() + spacingY))
     end
-    -- The rows Blizzard sized the frame for (items it showed plus one cell
-    -- per bag button) against the rows the items alone need.
-    local shown = tonumber(bag.shownSlots) or #items
-    local blizzardRows = math.ceil((shown + (NUM_CONTAINER_FRAMES or 0)) / GRID_COLUMNS)
+    -- Blizzard's own height formula (CalculateHeight), for the item rows alone.
     local rows = math.ceil(#items / GRID_COLUMNS)
-    local extra = (rows - blizzardRows) * (items[1]:GetHeight() + spacingY)
-    if extra ~= 0 and gridHeight ~= bag:GetHeight() then
-        local height = bag:GetHeight() + extra
-        bag:SetHeight(height)
-        gridHeight = height
-        if NineSliceUtil and NineSliceUtil.UpdateCornerCropping then pcall(NineSliceUtil.UpdateCornerCropping, bag, height) end
+    local okPad, pad = pcall(bag.GetPaddingHeight, bag)
+    local okExtra, extra = pcall(bag.CalculateExtraHeight, bag)
+    if okPad and okExtra and tonumber(pad) and tonumber(extra) then
+        local height = rows * items[1]:GetHeight() + (rows - 1) * spacingY + pad + extra
+        if math.abs((bag:GetHeight() or 0) - height) > 0.5 then
+            bag:SetHeight(height)
+            if NineSliceUtil and NineSliceUtil.UpdateCornerCropping then pcall(NineSliceUtil.UpdateCornerCropping, bag, height) end
+        end
+    end
+    -- Whatever sits under the items (tracked currencies, money) is not a stop.
+    local isItem, gridBottom = {}, nil
+    for _, item in ipairs(items) do
+        isItem[item] = true
+        local bottom = item:GetBottom()
+        if bottom and (not gridBottom or bottom < gridBottom) then gridBottom = bottom end
+    end
+    if gridBottom then
+        for _, child in ipairs({ bag:GetChildren() }) do
+            local top = not isItem[child] and child:IsShown() and child:GetTop()
+            if top and top <= gridBottom + 1 then A.IgnoreForNavigation(child) end
+        end
     end
 end
 A.LayoutGrid = LayoutGrid
@@ -726,9 +753,16 @@ local function HookGamepadGrid()
     if gridHooked or not bag or type(bag.UpdateItemLayout) ~= "function" then return end
     gridHooked = true
     hooksecurefunc(bag, "UpdateItemLayout", LayoutGrid)
-    -- A frame size set after the layout would undo the shorter height.
-    if type(bag.UpdateFrameSize) == "function" then
-        hooksecurefunc(bag, "UpdateFrameSize", function(self) gridHeight = nil; LayoutGrid(self) end)
+    -- A frame size set after the layout would undo the item-only height.
+    if type(bag.UpdateFrameSize) == "function" then hooksecurefunc(bag, "UpdateFrameSize", LayoutGrid) end
+    -- Blizzard turns wrapping on each time the bag joins the navigation: the
+    -- last column then leads to the first. Turn it off again.
+    if type(bag.SmartNavPanelInfoAdded) == "function" then
+        hooksecurefunc(bag, "SmartNavPanelInfoAdded", function(self)
+            if A.db and A.db.gamepadGrid and not InCombat() and SmartNavigation and SmartNavigation.SetWrapping then
+                pcall(SmartNavigation.SetWrapping, SmartNavigation, self, false)
+            end
+        end)
     end
 end
 
