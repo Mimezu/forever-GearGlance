@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.0
+
+- The gamepad bag grid moved to Gamepad Companion (0.61.0, Setup > Bags > Bag grid): the plain item grid,
+  the currency line as no cursor stop, no wrap, focus back to the bag after loot, and the navigation recorder
+  (now `/gpc nav`). Gear Glance's `gamepadGrid` option and `/gg nav` are gone.
+- Kept: Gear Glance's own backpack button is never a gamepad cursor stop.
+
 ## 2.4.2
 
 - Gamepad bag: after opening a container (loot window), the cursor comes back to the bag. Blizzard returns focus

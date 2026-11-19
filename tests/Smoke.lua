@@ -107,10 +107,9 @@ C_Texture = { GetAtlasInfo = function() return { width = 43, height = 60, leftTe
 NineSliceUtil = { ApplyLayoutByName = function() end }
 C_AddOns = { GetAddOnMetadata = function() return "2.0.0" end }
 Enum = { ItemBind = { OnEquip = 2, ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 } }
--- Blizzard's addon-facing gamepad navigation calls, recorded.
-local navIgnored, wrapping = {}, {}
+-- Blizzard's addon-facing gamepad navigation call, recorded.
+local navIgnored = {}
 function SmartNavigation_MarkFrameIgnored(frame) navIgnored[frame] = true end
-SmartNavigation = { SetWrapping = function(_, frame, on) wrapping[frame] = on end }
 local printed = {}
 function print(text) printed[#printed + 1] = text end
 
@@ -223,9 +222,6 @@ combined.EnumerateValidItems = function(self)
     return function() i = i + 1; if self.buttons[i] then return i, self.buttons[i] end end
 end
 combined.UpdateItems = function() end
--- Gamepad UI sizing and layout (Blizzard's own; Gear Glance post-hooks them).
-combined.UpdateFrameSize = function(self) self.h = 300 end
-combined.UpdateItemLayout = function() end
 combined.TitleContainer = Region("Frame")
 combined.TitleContainer.level = 6
 local border = Region("Frame") -- NineSlice, drawn above the title
@@ -237,14 +233,7 @@ ContainerFrame1.shown = false
 NUM_CONTAINER_FRAMES = 1
 
 BankPanelItemButtonMixin = { Refresh = function() end }
-LootFrame = Region("Frame")
--- Blizzard's gamepad focus manager: the two calls open to addons, recorded.
-local focusCalls = {}
-GamepadMode = { FrameControlsManager = {
-    isUIFocused = false,
-    FrameHidden = function(self, f) focusCalls[#focusCalls + 1] = "hidden" end,
-    FrameShown = function(self, f) focusCalls[#focusCalls + 1] = "shown"; self.isUIFocused, self.focusedFrame = true, f end,
-} }
+
 
 -- Minimap, key bindings and the AddOns settings list ----------------------------------------
 Minimap = Region("Frame")
@@ -561,80 +550,9 @@ for slot = 1, 8 do bags[0][slot] = nil end
 combined:UpdateItems()
 flush()
 
--- Gamepad UI: the combined bag as a plain grid, without the gamepad bag buttons.
-local holder = Region("Frame"); holder.parent = combined
-local bagButtons = { [0] = Region("Button") }
-bagButtons[0].parent = holder
-GamepadBagBar = { GetBagButton = function(_, id) return bagButtons[id] end }
-combined.MoneyFrame = Region("Frame")
-combined.h = 300
-combined.GetPaddingHeight = function() return 63 end
-combined.CalculateExtraHeight = function() return 30 end
--- Under the items: the tracked-currency line. Above them: the search box.
-local tracker = Region("Frame"); tracker.top, tracker.parent = 10, combined
-local search = Region("EditBox"); search.top, search.parent = 400, combined
-combined.GetChildren = function() return tracker, search end
-for slot = 1, 8 do combined.buttons[slot].GetBottom = function() return 20 end end
-tracker.GetTop = function(self) return self.top end
-search.GetTop = function(self) return self.top end
-local gamepad = false
-InputUtil = { IsGamepadUIEnabled = function() return gamepad end }
-for slot = 1, 8 do bags[0][slot] = { link = Item("Grid" .. slot, { quality = 1, level = 1 }) } end
-fire("PLAYER_LOGIN")
-combined:UpdateFrameSize(); combined:UpdateItemLayout()
-check(bagButtons[0].shown and combined.h == 300, "keyboard UI: Blizzard's layout untouched")
-gamepad = true
-combined:UpdateFrameSize(); combined:UpdateItemLayout()
-check(not bagButtons[0].shown, "gamepad UI: bag buttons inside the bag hidden")
--- Blizzard's formula for 8 items (1 row): 37 + 63 padding + 30 money and search.
-check(combined.h == 130, "frame sized for the item rows alone")
-combined:UpdateItemLayout()
-check(combined.h == 130, "a second layout keeps that height")
-check(navIgnored[tracker] and not navIgnored[search], "the line under the items is no cursor stop")
+-- Gamepad UI: our backpack button is never a d-pad cursor stop. (The bag grid
+-- itself lives in Gamepad Companion since its 0.61.0.)
 check(navIgnored[GearGlanceBagButton], "our backpack button is no cursor stop")
-combined:SmartNavPanelInfoAdded()
-check(wrapping[combined] == false, "no wrap from the last column to the first")
-local function pointOf(slot)
-    local p = combined.buttons[slot].points
-    return p[#p]
-end
--- Highest slot first from the bottom right: slot 8 at the corner, slot 1 seven cells left.
-check(pointOf(8)[1] == "BOTTOMRIGHT" and pointOf(8)[2] == combined.MoneyFrame and pointOf(8)[4] == 0 and pointOf(8)[5] == 4, "slot 8 at the bottom right")
-check(pointOf(1)[4] == -7 * 42 and pointOf(1)[5] == 4, "slot 1 seven cells to the left, same row")
-ns.SetOption("gamepadGrid", false)
-bagButtons[0]:Show()
-combined:UpdateFrameSize(); combined:UpdateItemLayout()
-check(bagButtons[0].shown and combined.h == 300, "option off: Blizzard's gamepad layout")
-ns.SetOption("gamepadGrid", true)
-combined:UpdateFrameSize(); combined:UpdateItemLayout()
-combined:UpdateFrameSize()
-check(combined.h == 130, "Blizzard sizing the frame again gets the item height back")
--- Loot window closed and focus went back to the character: the bag gets it back.
-local manager = GamepadMode.FrameControlsManager
-manager.isUIFocused, manager.focusedFrame = false, combined
-LootFrame:Show(); LootFrame:Hide(); flush()
-check(focusCalls[1] == "hidden" and focusCalls[2] == "shown" and manager.focusedFrame == combined, "bag focused again after loot")
-focusCalls = {}
-LootFrame:Show(); LootFrame:Hide(); flush()
-check(#focusCalls == 0, "bag already focused (Blizzard did it): nothing")
-manager.isUIFocused, manager.focusedFrame = true, Region("Frame")
-LootFrame:Show(); LootFrame:Hide(); flush()
-check(#focusCalls == 0, "another window has focus: left alone")
-manager.isUIFocused, manager.focusedFrame = false, nil
-
--- In combat nothing is moved or marked (Blizzard would refuse it).
-local fight = Region("Frame"); fight.top, fight.parent = 5, combined
-combined.GetChildren = function() return tracker, search, fight end
-local keepCombat = InCombatLockdown
-function InCombatLockdown() return true end
-combined:UpdateFrameSize(); combined:UpdateItemLayout()
-wrapping[combined] = nil; combined:SmartNavPanelInfoAdded()
-check(combined.h == 300 and not navIgnored[fight] and wrapping[combined] == nil, "combat: no layout, no marks, no wrap call")
-InCombatLockdown = keepCombat
-gamepad = false; InputUtil = nil; GamepadBagBar = nil
-for slot = 1, 8 do bags[0][slot] = nil end
-combined:UpdateItems()
-flush()
 
 -- Bank buttons refresh through the mixin hook.
 local bankButton = Region("ItemButton")
