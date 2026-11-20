@@ -680,11 +680,15 @@ function A.IgnoreForNavigation(frame)
 end
 
 -- Repaints everything on screen, e.g. after an option change.
-function A.RefreshAll()
-    revision = revision + 1
+local function QueueShownBags()
     for frame in pairs(bagFrames) do
         if frame:IsShown() then A.QueueFrame(frame) end
     end
+end
+
+function A.RefreshAll()
+    revision = revision + 1
+    QueueShownBags()
     local bank = BankPanel or (BankFrame and BankFrame.BankPanel)
     if bank and bank:IsVisible() and bank.EnumerateValidItems then EachButton(bank, A.QueueButton) end
 end
@@ -757,7 +761,8 @@ events:SetScript("OnEvent", function(_, event, arg1, ...)
         wipe(equipped)
         A.RefreshAll()
     else -- item data arrived
-        if cheapIncomplete then A.RefreshAll() end
+        -- The cheap slot is in each button's key: repaint only what changed.
+        if cheapIncomplete then QueueShownBags() end
         RetryPending()
     end
 end)
