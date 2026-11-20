@@ -22,6 +22,7 @@ A.defaults = {
     showOpenable = true,
     showCheapest = true,
     sellMarks = true,
+    vendorWorth = true,
     textSize = 13,
     bagButton = true,
     minimapButton = true,
@@ -33,6 +34,9 @@ local WUE_COLOR = { 0.15, 0.82, 0.74 }
 local BOA_COLOR = { 0.35, 0.72, 1.00 }
 local GLOW_COLOR = { 1.00, 0.78, 0.20 }
 local CHEAP_COLOR = { 1.00, 0.35, 0.10 } -- orange-red, apart from the gold "can open" glow
+local VENDOR_COLOR = { 0.35, 1.00, 0.35 } -- green: sell this one here
+local VENDOR_RATIO = 0.8 -- vendor price at least 80% of the auction price
+local VENDOR_ICON = "Interface\\MoneyFrame\\UI-GoldIcon"
 local MAX_RETRIES = 10
 local SELL_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 local SELL_DELAY = 0.2 -- seconds between sales, so the server keeps up
@@ -183,6 +187,26 @@ end
 -- When no general bag has a free slot, the bag item with the lowest vendor
 -- value (price x stack) gets a junk coin: the one to sell or drop for room.
 -- Items with no vendor price (quest items, the hearthstone) are skipped.
+
+-- Worth selling here: at a vendor, with Auctionator loaded, an unbound item
+-- whose vendor price is at least 80% of the auction price Auctionator knows.
+-- Unit prices on both sides. No auction price known: no mark.
+
+local atMerchant = false
+
+function A.HasAuctionator()
+    local api = Auctionator and Auctionator.API and Auctionator.API.v1
+    return api and type(api.GetAuctionPriceByItemLink) == "function" or false
+end
+
+local function VendorWorth(link, info)
+    if not (atMerchant and A.db.vendorWorth and not info.isBound and A.HasAuctionator()) then return false end
+    local vendor = select(11, C_Item.GetItemInfo(link))
+    if not vendor or vendor <= 0 then return false end
+    local ok, auction = pcall(Auctionator.API.v1.GetAuctionPriceByItemLink, ADDON_NAME, link)
+    if not ok or type(auction) ~= "number" or auction <= 0 then return false end
+    return vendor >= VENDOR_RATIO * auction
+end
 
 -- Profession tools are never "cheapest": you need them, whatever they sell for.
 local TOOLS = {
@@ -432,6 +456,16 @@ function A.MakeOverlay(button)
     overlay.cheapGlow:SetAllPoints(button)
     overlay.cheapGlow:SetBlendMode("ADD")
     overlay.cheapGlow:SetVertexColor(CHEAP_COLOR[1], CHEAP_COLOR[2], CHEAP_COLOR[3])
+    -- Worth selling at this vendor: a gold coin and a steady green border.
+    overlay.vendor = button:CreateTexture(nil, "OVERLAY", nil, 7)
+    overlay.vendor:SetTexture(VENDOR_ICON)
+    overlay.vendor:SetSize(14, 14)
+    overlay.vendor:SetPoint("TOPLEFT", 2, -2)
+    overlay.vendorGlow = button:CreateTexture(nil, "OVERLAY", nil, 6)
+    overlay.vendorGlow:SetAtlas("bags-glow-white")
+    overlay.vendorGlow:SetAllPoints(button)
+    overlay.vendorGlow:SetBlendMode("ADD")
+    overlay.vendorGlow:SetVertexColor(VENDOR_COLOR[1], VENDOR_COLOR[2], VENDOR_COLOR[3])
     -- Marked for sale: the icon darkened, a coin pile in the top-right corner.
     overlay.sellWash = button:CreateTexture(nil, "OVERLAY", nil, 5)
     overlay.sellWash:SetAllPoints(button)
@@ -467,6 +501,7 @@ end
 
 local function Clear(overlay)
     overlay.level:Hide(); overlay.bind:Hide(); overlay.arrow:Hide(); overlay.glow:Hide(); overlay.cheap:Hide(); overlay.cheapGlow:Hide()
+    overlay.vendor:Hide(); overlay.vendorGlow:Hide()
     if overlay.cheapPulse then overlay.cheapPulse:Stop() end
     overlay.sell:Hide(); overlay.sellWash:Hide()
     overlay.key = nil
@@ -481,14 +516,18 @@ function A.Paint(overlay, data)
     if on and db.qualityColors then r, g, b = QualityColor(data.quality) end
     -- At a vendor Blizzard puts a junk coin in the top-left corner of grey items;
     -- the cheapest item gets the same coin when the bags are full.
-    local cheap = on and db.showCheapest and data.cheap == true and not data.junk
+    -- Worth selling here wins the corner over the cheapest-item coin.
+    local vendor = on and db.vendorWorth and data.vendor == true and not data.junk
+    overlay.vendor:SetShown(vendor)
+    overlay.vendorGlow:SetShown(vendor)
+    local cheap = on and db.showCheapest and data.cheap == true and not data.junk and not vendor
     overlay.cheap:SetShown(cheap)
     overlay.cheapGlow:SetShown(cheap)
     if overlay.cheapPulse then
         if cheap and not overlay.cheapPulse:IsPlaying() then overlay.cheapPulse:Play()
         elseif not cheap then overlay.cheapPulse:Stop() end
     end
-    if on and db.showItemLevel and data.level and not data.junk and not cheap then
+    if on and db.showItemLevel and data.level and not data.junk and not cheap and not vendor then
         overlay.level:SetText(data.level)
         overlay.level:SetTextColor(r, g, b)
         overlay.level:Show()
@@ -542,12 +581,13 @@ local function Update(button)
     local junk = button.JunkIcon and button.JunkIcon:IsShown() or false
     local cheap = bag == cheapBag and slot == cheapSlot and not button.GetBankTabID
     local sell = not button.GetBankTabID and IsMarked(bag, slot, link)
+    local vendor = not button.GetBankTabID and VendorWorth(link, info)
     local key = link .. (info.isBound and "|b|" or "|u|") .. (junk and "j|" or "") .. (cheap and "c|" or "")
-        .. (sell and "s|" or "") .. bag .. ":" .. slot
+        .. (sell and "s|" or "") .. (vendor and "v|" or "") .. bag .. ":" .. slot
     if overlay and overlay.key == key and overlay.rev == revision then return end
     overlay = overlay or A.MakeOverlay(button)
     local data = Analyze(bag, slot, info)
-    data.junk, data.cheap, data.sell = junk, cheap, sell
+    data.junk, data.cheap, data.sell, data.vendor = junk, cheap, sell, vendor
     A.Paint(overlay, data)
     if data.pending then
         -- Blizzard redraws its bags when their items load; the retries cover
@@ -698,9 +738,15 @@ events:SetScript("OnEvent", function(_, event, arg1, ...)
         if A.RegisterSettings then pcall(A.RegisterSettings) end
         A.RefreshAll()
     elseif event == "MERCHANT_SHOW" then
+        atMerchant = true
+        if A.db.vendorWorth and A.HasAuctionator() then A.RefreshAll() end
         StartSale()
     elseif event == "MERCHANT_CLOSED" then
         if selling then FinishSale() end
+        if atMerchant then
+            atMerchant = false
+            A.RefreshAll()
+        end
     elseif event == "UI_ERROR_MESSAGE" then
         -- The vendor buys nothing, or the gold cap is reached: stop.
         local message = ... -- UI_ERROR_MESSAGE: errorType, message

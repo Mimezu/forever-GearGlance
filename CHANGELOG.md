@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.6.0
+
+- At a vendor, with Auctionator loaded: a gold coin and a green border on items whose vendor price is 80% or more
+  of Auctionator's auction price (unit prices). Bound items and items without a known auction price are skipped.
+  Option: "Vendor beats auction".
+
 ## 2.5.0
 
 - The gamepad bag grid moved to Gamepad Companion (0.61.0, Setup > Bags > Bag grid): the plain item grid,

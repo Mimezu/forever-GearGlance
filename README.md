@@ -9,6 +9,7 @@ A small Forever version of the retail Gear Glance. It marks your bag and bank it
 - **Junk coin** and a pulsing border on the cheapest item (vendor price x stack) when your bags are full. Profession tools are skipped.
 - **Sell marks**: alt-click a bag item to mark just that item (again to unmark). Marked items sell at the next vendor (hold Shift to skip).
   Only the last 12 sales can be bought back.
+- **Vendor beats auction** (with Auctionator): at a vendor, a gold coin and green border on items that sell for 80% or more of their auction price.
 
 ## Use
 

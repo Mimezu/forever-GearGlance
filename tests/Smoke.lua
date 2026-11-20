@@ -471,6 +471,50 @@ for slot = 1, 8 do bags[0][slot] = nil end
 combined:UpdateItems()
 flush()
 
+-- At a vendor, with Auctionator: items whose vendor price is 80% or more of the auction price.
+local function vendor(slot) return overlay(slot).vendor.shown end
+local ahPrices = {}
+bags[0][1] = { link = Item("Morel", { quality = 1, level = 15, price = 80 }) }      -- AH 100: 80%
+bags[0][2] = { link = Item("Silk", { quality = 1, level = 15, price = 79 }) }       -- AH 100: 79%
+bags[0][3] = { link = Item("Unknown", { quality = 1, level = 15, price = 500 }) }   -- no AH price
+bags[0][4] = { link = Item("BoundRing", { quality = 2, level = 15, price = 900 }), bound = true }
+bags[0][5] = { link = Item("Quest", { quality = 1, level = 15, price = 0 }) }
+ahPrices[bags[0][1].link], ahPrices[bags[0][2].link] = 100, 100
+ahPrices[bags[0][4].link], ahPrices[bags[0][5].link] = 100, 100
+combined:UpdateItems()
+flush()
+fire("MERCHANT_SHOW")
+flush()
+check(not vendor(1), "no vendor marks without Auctionator")
+Auctionator = { API = { v1 = { GetAuctionPriceByItemLink = function(caller, link)
+    assert(caller == "GearGlance")
+    return ahPrices[link]
+end } } }
+fire("MERCHANT_CLOSED")
+flush()
+check(not vendor(1), "no vendor marks away from a vendor")
+fire("MERCHANT_SHOW")
+flush()
+check(vendor(1) and overlay(1).vendorGlow.shown, "coin and border at 80% of the auction price")
+check(not overlay(1).level.shown, "the coin takes the item level's corner")
+check(not vendor(2), "79%: no mark")
+check(not vendor(3), "no auction price known: no mark")
+check(not vendor(4), "bound items: no mark")
+check(not vendor(5), "no vendor price: no mark")
+ns.SetOption("vendorWorth", false)
+flush()
+check(not vendor(1), "option turns the marks off")
+ns.SetOption("vendorWorth", true)
+flush()
+check(vendor(1), "and on again")
+fire("MERCHANT_CLOSED")
+flush()
+check(not vendor(1) and not overlay(1).vendorGlow.shown, "marks gone when the vendor closes")
+Auctionator = nil
+for slot = 1, 5 do bags[0][slot] = nil end
+combined:UpdateItems()
+flush()
+
 -- Alt-click marks an item for sale; at a vendor it sells.
 local function altClick(slot, mouse)
     keys.alt = true

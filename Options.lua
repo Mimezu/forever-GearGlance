@@ -4,12 +4,12 @@
 
 local _, A = ...
 
-local W, H = 560, 474
+local W, H = 560, 500
 local PW = W - 48            -- content width
 local GAP = 10
 local CW = (PW - GAP) / 2    -- card width
 local RIGHT = CW + GAP
-local H1, H2 = 234, 134      -- card rows
+local H1, H2 = 260, 134      -- card rows
 local TOP = 36               -- first control below a card title
 local LABEL_X = 34           -- where a checkbox label starts (box at 10, text at +24)
 local NOTE, DIM = { 0.80, 0.77, 0.70 }, { 0.5, 0.5, 0.5 }
@@ -287,6 +287,9 @@ local function BuildContent(page)
     -- Sale marks work with the markings off, so this box is never greyed.
     local sellCheck = Check(items, "sellMarks", "Alt-click: sell at vendor", 10, -TOP - 160)
     Tooltip(sellCheck, "Sell at vendor", "Marked items sell at the next vendor.")
+    -- Needs Auctionator's prices: greyed out without it.
+    local vendorCheck = Check(items, "vendorWorth", "Vendor beats auction", 10, -TOP - 186)
+    Tooltip(vendorCheck, "Vendor beats auction", "At a vendor: vendor price 80% or more of the auction price. Needs Auctionator.")
     Note(items, "Item level higher than what you wear.\nStats are not compared.", LABEL_X, -TOP - 50, CW - LABEL_X - 10)
 
     -- Four bag slots on a dark tray, centered in the card body, names below.
@@ -347,6 +350,7 @@ local function BuildContent(page)
     updaters[#updaters + 1] = function()
         local on = db.enabled
         for _, check in ipairs(itemChecks) do SetCheckEnabled(check, on) end
+        SetCheckEnabled(vendorCheck, on and A.HasAuctionator())
         sizeStep.value:SetText(db.textSize)
         sizeStep:SetEnabled(on)
         colors:Update(on)
