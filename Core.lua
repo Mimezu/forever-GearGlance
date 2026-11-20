@@ -292,8 +292,10 @@ local function Marks()
 end
 
 local function IsMarked(bag, slot, link)
+    local marks = Marks()
+    if next(marks) == nil then return false end
     local key = SaleKey(bag, slot, link)
-    return key ~= nil and Marks()[key] == true
+    return key ~= nil and marks[key] == true
 end
 
 local function BagButtonSlot(button)
