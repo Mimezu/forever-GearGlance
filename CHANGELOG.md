@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.6.1
+
+- Faster bag repaints while item data loads, and when nothing is marked for sale.
+
 ## 2.6.0
 
 - At a vendor, with Auctionator loaded: a gold coin and a green border on items whose vendor price is 80% or more
